@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+booking.db
+booking.db.bak*
+bot.lock
+bot.log
+.DS_Store
