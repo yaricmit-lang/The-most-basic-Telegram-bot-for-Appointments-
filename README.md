@@ -1,73 +1,74 @@
-# Бот записи на услуги
+# Appointment Booking Bot
 
-Telegram-бот для записи клиентов: маникюр, стрижки, тренировки — что угодно.
-Python + aiogram 3 + SQLite, всё хранится локально в одном файле базы.
+A Telegram bot for booking clients: nail care, haircuts, training sessions — anything.
+Python + aiogram 3 + SQLite, everything stored locally in a single database file.
 
-**Весь интерфейс бота — на английском** (кнопки, сообщения клиенту и мастеру). Этот README
-на русском, потому что это документация для вас, а не то, что видят клиенты.
+## What it does
 
-## Что умеет
+**For the client**
+- Booking: service → master → day → time. Name and phone are asked **only once**
+  (phone via a "Share my number" button), the Telegram profile is picked up automatically.
+- **"Book again"** — the core flow: a returning client sees a "Repeat: service, master"
+  card right at /start and only needs to pick a date and time.
+  The full menu is tucked under "Different service".
+- **Nail extension**: after picking a style, the bot asks how many nails to extend
+  (0–10). Each nail adds to the price and duration per the style's rate (e.g.
+  medium — +5 € and +15 min, long — +10 € and +20 min). Scheduling, buffers, and
+  price are computed from the extended duration; rates are set on the service card.
+- **Design reference** — photo/video (up to 5) + a comment, sent right after booking or
+  later from "My bookings". Accepted **until 5:00 AM on the day of the appointment**
+  (hour is configurable) — so the master has time to prepare materials. If the client
+  booked the same day after the deadline, the window stays open until the visit starts,
+  but the bot warns that the master may not have time to prepare.
+- **Messaging the master** through the bot: the client can write first ("running
+  10 minutes late") or reply to the master's message.
+- Cancel a booking from "My bookings".
+- Waitlist: if a day is full — "Notify me if it opens up". When someone cancels,
+  the bot notifies whoever's waiting.
+- Group sessions with an automatic capacity limit.
 
-**Для клиента**
-- Запись: услуга → мастер → день → время. Имя и телефон спрашиваются **один раз**
-  (телефон — кнопкой «Отправить мой номер»), Telegram-профиль подхватывается автоматически.
-- **«Записаться снова»** — главный сценарий: возвращающийся клиент при /start сразу видит
-  карточку «Повторить: услуга, мастер» и выбирает только дату и время.
-  Полное меню — под кнопкой «Другая услуга».
-- **Наращивание ногтей**: после выбора вида бот спрашивает, сколько ногтей наращивать
-  (0–10). Каждый ноготь добавляет к цене и длительности по тарифу вида (например,
-  средний — +5 € и +15 мин, длинный — +10 € и +20 мин). Расписание, буфер и цена
-  считаются от растянутой длительности; тарифы настраиваются в карточке услуги.
-- **Референс дизайна** — фото/видео (до 5) + комментарий, сразу при записи или позже
-  из «Мои записи». Принимается **до 5:00 утра дня записи** (час настраивается) — чтобы
-  мастер успел подготовить материалы. Если клиент записался в тот же день уже после
-  дедлайна, окно открыто до начала визита, но бот предупреждает, что мастер может
-  не успеть подготовиться.
-- **Переписка с мастером** через бота: клиент может написать сам («опоздаю на 10 минут»)
-  или ответить на сообщение мастера.
-- Отмена записи в «My bookings».
-- Лист ожидания: если день занят — «Notify me if it opens up». При отмене чьей-то записи
-  бот сам зовёт ожидающих.
-- Групповые занятия с автоматическим лимитом мест.
+**Automated notifications** (survive bot restarts — stored in the database)
+- Booking created → confirmation to the client + notification to the master.
+- Booking created by the owner manually → the client **still** gets notified.
+- 24 hours before → confirmation request (buttons "Confirm" / "Can't make it").
+- 2 hours before → reminder.
+- Cancellation → notification to the other side + the waitlist kicks in.
+- Client sent a reference → the master gets the media + a client card with buttons
+  "✅ Got it" / "❌ No materials" / "✍️ Message client" / "⏰ Reply later".
+  The album is batched into a single send (~1 minute delay), so 5 photos don't turn
+  into 5 notifications.
+- **At the end of the work day** (time comes from today's schedule; if today is a
+  day off — 20:00) → a reminder to the master to check materials if any of
+  tomorrow's bookings still have an unanswered reference. References postponed
+  with "⏰ Reply later" are included in this reminder too.
+- The evening before at 20:00 → a reminder to the client to send a reference, if
+  they haven't already.
+- Every morning at 8:00 → a digest for the master: today's bookings, references,
+  and what to prepare.
+- After the visit → a request to rate (1–5) and review, forwarded to the master.
+- After N days (default 21) → a "time to refresh" nudge with a "Book again" button.
 
-**Автоуведомления** (переживают перезапуск бота — лежат в базе)
-- Запись создана → подтверждение клиенту + уведомление мастеру.
-- Запись создана админом вручную → клиент **всё равно** получает уведомление.
-- За 24 часа → запрос подтверждения (кнопки «Confirm» / «Can't make it»).
-- За 2 часа → напоминание.
-- Отмена → уведомление второй стороне + запуск листа ожидания.
-- Клиент прислал референс → мастеру уходят медиа + карточка клиента с кнопками
-  «✅ Got it» / «❌ No materials» / «✍️ Message client» / «⏰ Reply later».
-  Альбом склеивается в одну отправку (пауза ~1 минута), поэтому 5 фото не превращаются
-  в 5 уведомлений.
-- **В конце рабочего дня** (время берётся из графика на сегодня; если сегодня выходной —
-  в 20:00) → напоминание мастеру проверить материалы, если по завтрашним записям остались
-  референсы без ответа. Отложенные кнопкой «⏰ Reply later» тоже попадают в это
-  напоминание.
-- Накануне в 20:00 → напоминание клиенту прислать референс, если он ещё не прислал.
-- Утром в 8:00 → сводка мастеру: все записи на сегодня, референсы и что готовить.
-- После визита → запрос оценки (1–5) и отзыва, всё пересылается мастеру.
-- Через N дней (по умолчанию 21) → «пора освежить» с кнопкой «Записаться снова».
+**For the owner** (`/admin`)
+- Bookings for today/tomorrow/the week, cancel any booking.
+- Manual booking for a client (search by name/phone, or add a new client). If that
+  person later opens the bot themselves, their history merges by phone number.
+- Services (manicure styles): name, duration, price, **example gallery** (up to 10
+  photos), days until the "time to refresh" nudge. The first photo is the cover;
+  the client sees it when picking a style and can open all examples with
+  "🖼 Show examples" — so it's clear why different styles have different
+  durations and prices.
+- Masters: name + Telegram ID for personal notifications.
+- Weekly schedule as plain text: `10:00-19:00 lunch 14:00-15:00` or `day off`.
+- Exceptions for specific dates (vacation, a short day).
+- Group sessions: create, see the participant list, cancel with everyone notified.
+- Reply to the client right from the notification: "❌ No materials" pre-fills a
+  ready-made message that can be sent as-is or extended in your own words.
+- Settings: break between sessions (15 min), time grid step (30 min), minimum
+  lead time before booking, booking horizon, reference deadline hour (5:00), photo
+  limit (5), digest hour (8:00), reference-reminder hour (20:00), the master's
+  name as shown to clients.
 
-**Для владельца** (`/admin`)
-- Записи на сегодня/завтра/неделю, отмена любой записи.
-- Ручная запись клиента (поиск по имени/телефону или новый клиент). Если этот человек потом
-  придёт в бот сам — история объединится по номеру телефона.
-- Услуги (виды маникюра): название, длительность, цена, **галерея примеров** (до 10 фото),
-  дни до «пора освежить». Первое фото — обложка; клиент видит её при выборе вида и может
-  открыть все примеры кнопкой «🖼 Show examples». Так видно, почему у разных
-  вариантов разная длительность и цена.
-- Мастера: имя + Telegram ID для личных уведомлений.
-- График по дням недели простым текстом: `10:00-19:00 lunch 14:00-15:00` или `day off`.
-- Исключения на конкретные даты (отпуск, короткий день).
-- Групповые занятия: создание, список участников, отмена с уведомлением всех.
-- Ответ клиенту прямо из уведомления: «❌ No materials» подставляет готовый текст,
-  который можно отправить как есть или дописать своими словами.
-- Настройки: буфер между сеансами (15 мин), шаг сетки (30 мин), минимальное время до записи,
-  горизонт записи, час дедлайна референса (5:00), лимит фото (5), час сводки (8:00),
-  час напоминания о референсе (20:00), имя мастера для клиентов.
-
-## Установка
+## Setup
 
 ```bash
 cd appointment-bot
@@ -76,34 +77,38 @@ python3 -m venv .venv
 cp .env.example .env
 ```
 
-Откройте `.env` и заполните:
+Open `.env` and fill in:
 
-- `BOT_TOKEN` — токен из @BotFather. **Никому его не показывайте**; если токен засветился
-  (например, на скриншоте) — нажмите Revoke в BotFather и вставьте новый.
-- `ADMIN_IDS` — ваш Telegram ID (узнать: написать @userinfobot). Можно несколько через запятую.
+- `BOT_TOKEN` — the token from @BotFather. **Never share it with anyone**; if it
+  ever leaks (e.g. shows up in a screenshot), hit Revoke in BotFather and paste a
+  new one.
+- `ADMIN_IDS` — your Telegram ID (find it via @userinfobot). Multiple IDs can be
+  comma-separated.
 
-Запуск:
+Run it:
 
 ```bash
 .venv/bin/python bot.py
 ```
 
-## Первая настройка (2 минуты)
+## First-time setup (2 minutes)
 
-1. Откройте бота, отправьте `/admin`.
-2. «🧾 Services» → добавьте услуги.
-3. «📅 Schedule» → задайте часы по дням недели.
-4. Готово — клиенты могут записываться.
+1. Open the bot, send `/admin`.
+2. "🧾 Services" → add your services.
+3. "📅 Schedule" → set working hours for each day.
+4. Done — clients can start booking.
 
-## Заметки
+## Notes
 
-- Время — локальное время машины, на которой запущен бот.
-- База — файл `booking.db` рядом с ботом; бэкап = скопировать этот файл.
-- Фото и видео референсов не хранятся на диске: в базе лежит только `file_id`, сами файлы
-  живут в Telegram. Как следствие, при смене токена бота старые референсы перестанут
-  открываться (записи и все остальные данные не пострадают).
-- Чтобы бот работал постоянно, запустите его на сервере/мини-ПК и добавьте автозапуск
-  (launchd на macOS, systemd на Linux). Пример systemd-юнита:
+- Time is the local time of the machine running the bot.
+- The database is a single file, `booking.db`, next to the bot; backing up means
+  copying that file.
+- Reference photos and videos aren't stored on disk: the database only holds a
+  `file_id`, the actual files live on Telegram. As a result, if you ever rotate the
+  bot's token, old references will stop opening (bookings and all other data are
+  unaffected).
+- To keep the bot running continuously, run it on a server/mini PC and set up
+  autostart (launchd on macOS, systemd on Linux). Example systemd unit:
 
 ```ini
 [Unit]
