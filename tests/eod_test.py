@@ -68,7 +68,7 @@ async def main():
     bot = FakeBot()
     await scheduler._maybe_eod_check(bot)
     assert bot.sent, "должно прийти напоминание про материалы"
-    assert "Check materials" in bot.sent[0][1]
+    assert "Проверьте материалы" in bot.sent[0][1]
     assert bot.sent[0][0] == 111111111, "напоминание должно уйти мастеру"
     print("1. референс без ответа ->", bot.sent[0][1].splitlines()[0], "✅")
 

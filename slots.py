@@ -1,4 +1,4 @@
-"""Free-slot calculation: working hours, lunch break, buffer between sessions."""
+"""Расчёт свободных окон: рабочие часы, обед, буфер между сеансами."""
 from datetime import datetime
 
 import db
@@ -14,7 +14,7 @@ def to_hhmm(minutes):
 
 
 def get_work_window(master_id, date_str):
-    """(work_start, work_end, break_start, break_end) or None if the day is off."""
+    """(work_start, work_end, break_start, break_end) или None, если день нерабочий."""
     ovr = db.get_override(master_id, date_str)
     if ovr:
         if ovr["day_off"] or not ovr["work_start"]:
@@ -28,7 +28,7 @@ def get_work_window(master_id, date_str):
 
 
 def busy_intervals(master_id, date_str):
-    """Busy intervals in minutes since midnight (appointments + group sessions)."""
+    """Занятые интервалы в минутах от полуночи (записи + групповые занятия)."""
     res = []
     for a in db.appointments_for_master_date(master_id, date_str):
         res.append((to_min(a["starts_at"][11:16]), to_min(a["ends_at"][11:16])))
@@ -75,7 +75,7 @@ def free_slots(master_id, date_str, duration_min):
 
 
 def conflict_exists(master_id, date_str, time_hhmm, duration_min):
-    """Whether an arbitrary time (entered by the owner) overlaps busy intervals."""
+    """Пересекается ли произвольное время (введённое админом) с занятыми интервалами."""
     buffer_min = db.get_int("buffer_min", 15)
     t = to_min(time_hhmm)
     e = t + duration_min

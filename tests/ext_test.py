@@ -108,8 +108,8 @@ async def main():
     assert db.ext_extra_price(l, 2) == 20
     assert ui.price_with_ext("40€", 15) == "55€"
     assert ui.price_with_ext("60 евро", 40) == "100 евро"
-    assert ui.price_with_ext("", 15) == "+15 € (extension)"
-    assert ui.price_with_ext("договорная", 15) == "договорная +15 € (extension)"
+    assert ui.price_with_ext("", 15) == "+15 € (наращивание)"
+    assert ui.price_with_ext("договорная", 15) == "договорная +15 € (наращивание)"
     assert ui.price_with_ext("40€", 0) == "40€"
     print("хелперы длительности и цены ✅")
 
@@ -122,14 +122,14 @@ async def main():
     for line in text.splitlines():
         if line.strip():
             print("   ", line)
-    assert "extension" in text.lower() and "+5 €" in text and "+15 min" in text
+    assert "наращивание" in text.lower() and "+5 €" in text and "+15 мин" in text
     assert "ext:0" in cbs(markup) and "ext:10" in cbs(markup)
 
     cb = FakeCb(f"svcgo:{shrt}")
     st = FakeState()
     await ch.cb_service_go(cb, st)
     text, _ = cb.message.replies[-1]
-    assert "extension" not in text.lower(), "для короткого вопрос не нужен"
+    assert "наращивание" not in text.lower(), "для короткого вопрос не нужен"
     assert st.data.get("master_id") == mid, "короткий: сразу к датам"
     print("короткий -> без вопроса, сразу к датам ✅")
 
@@ -152,9 +152,9 @@ async def main():
     assert a["ends_at"] == f"{tomorrow} 12:45", "120 + 3*15 = 165 мин -> конец 12:45"
     assert a["ext_nails"] == 3 and a["ext_price"] == 15
     conf_text, _ = cb.message.replies[-1]
-    assert "Extension: 3 nail(s)" in conf_text and "2h 45m" in conf_text
+    assert "Наращивание: 3 ног." in conf_text and "2 ч 45 мин" in conf_text
     master_msg = cb.bot.msgs[0][1]
-    assert "Extension: 3 nail(s)" in master_msg and "+15 €" in master_msg, \
+    assert "Наращивание: 3 ног." in master_msg and "+15 €" in master_msg, \
         "мастер должен видеть наращивание"
     print("мастер уведомлён с наращиванием ✅")
 
@@ -172,7 +172,7 @@ async def main():
 
     # === карточка клиента показывает реальную длительность и доплату ===
     text, _ = ch.client_card(a)
-    assert "2h 45m" in text and "Extension: 3 nail(s)" in text and "55€" in text
+    assert "2 ч 45 мин" in text and "Наращивание: 3 ног." in text and "55€" in text
     print("карточка клиента: 2 ч 45 мин, +15 €, итог 55€ ✅")
 
     # === админ: ручная запись с наращиванием ===
@@ -194,9 +194,9 @@ async def main():
     for line in text.splitlines():
         if line.strip():
             print("   ", line)
-    assert "Extension: 4 nail(s) (+40 €)" in text
+    assert "Наращивание: 4 ног. (+40 €)" in text
     assert "100 евро" in text
-    assert "3h 50m" in text
+    assert "3 ч 50 мин" in text
 
     cb = FakeCb("a:nbok", uid=111111111)
     await ah.cb_nb_create(cb, st)
@@ -205,7 +205,7 @@ async def main():
     assert a2["ends_at"] == f"{tomorrow} 17:50", "230 мин от 14:00 -> 17:50"
     assert a2["ext_nails"] == 4 and a2["ext_price"] == 40
     client_note = [t for cid, t in cb.bot.msgs if cid == 999]
-    assert client_note and "Extension: 4 nail(s)" in client_note[0], \
+    assert client_note and "Наращивание: 4 ног." in client_note[0], \
         "клиент видит наращивание в «Вас записали»"
     print("ручная запись: конец 17:50, клиент уведомлён ✅")
 

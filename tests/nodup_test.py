@@ -117,7 +117,7 @@ async def main():
     bot = FakeBot()
     await scheduler._send_due(bot)
     await scheduler._send_due(bot)   # второй тик
-    remind_sends = [s for s in bot.sent if "in 2 hours" in s[1]]
+    remind_sends = [s for s in bot.sent if "Через 2 часа" in s[1]]
     print(f"  отправок remind2 за 2 тика: {len(remind_sends)}")
     assert len(remind_sends) == 1, "одно уведомление отправлено дважды!"
     print("4. одна строка = одна отправка ✅")
@@ -139,7 +139,7 @@ async def main():
     cb2 = FakeCb(f"doccl:{a4}")
     # имитируем гонку: оба прочитали статус до записи
     await asyncio.gather(ch.cb_cancel_do(cb1), ch.cb_cancel_do(cb2))
-    master_msgs = [s for s in cb1.bot.sent + cb2.bot.sent if "Booking cancelled" in s[1]]
+    master_msgs = [s for s in cb1.bot.sent + cb2.bot.sent if "Отмена записи" in s[1]]
     print(f"  уведомлений мастеру об отмене: {len(master_msgs)}")
     assert len(master_msgs) == 1, "мастер получил отмену дважды!"
     assert db.get_appointment(a4)["status"] == "cancelled"
@@ -151,7 +151,7 @@ async def main():
     cbf2 = FakeCb(f"fb:{a3}:4")
     await ch.cb_feedback(cbf1, FakeState())
     await ch.cb_feedback(cbf2, FakeState())
-    rating_msgs = [s for s in cbf1.bot.sent + cbf2.bot.sent if "Rating" in s[1]]
+    rating_msgs = [s for s in cbf1.bot.sent + cbf2.bot.sent if "Оценка" in s[1]]
     print(f"  уведомлений мастеру об оценке: {len(rating_msgs)}")
     assert len(rating_msgs) == 1, "мастер получил оценку дважды!"
     print("7. двойная оценка -> одно уведомление мастеру ✅")
@@ -165,7 +165,7 @@ async def main():
     cbo2 = FakeCb(f"a:refok:{a5}", uid=111111111)
     await ah.cb_ref_ok(cbo1)
     await ah.cb_ref_ok(cbo2)
-    ok_msgs = [s for s in cbo1.bot.sent + cbo2.bot.sent if "all set" in s[1].lower()]
+    ok_msgs = [s for s in cbo1.bot.sent + cbo2.bot.sent if "всё есть" in s[1].lower()]
     print(f"  подтверждений клиенту «материалы есть»: {len(ok_msgs)}")
     assert len(ok_msgs) == 1, "клиент получил подтверждение дважды!"
     print("8. двойное «Всё есть» -> одно клиенту ✅")

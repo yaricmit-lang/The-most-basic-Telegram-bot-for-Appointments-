@@ -124,8 +124,8 @@ async def main():
             print("   ", line)
     print("  кнопки:", labels(markup))
     assert ["🗑 1", "🗑 2", "🗑 3"] == [x for x in labels(markup) if x.startswith("🗑")]
-    assert any("Add photo" in x for x in labels(markup))
-    assert any("Rename" in x for x in labels(markup)), "rename should be right there"
+    assert any("Добавить фото" in x for x in labels(markup))
+    assert any("Переименовать" in x for x in labels(markup)), "переименование должно быть тут же"
 
     # удаление по номеру убирает именно это фото
     photos = db.service_photos(design)
@@ -144,15 +144,15 @@ async def main():
     # карточка услуги показывает счётчик
     db.add_service_photo(design, "PH_NEW")
     text, markup = ah.svc_detail(design)
-    assert "🖼 Examples: 2" in text
-    assert any("Examples (2)" in x for x in labels(markup))
+    assert "🖼 Примеры: 2" in text
+    assert any("Примеры (2)" in x for x in labels(markup))
     print("карточка вида: счётчик примеров ✅")
 
     # === клиент ===
     cb = FakeCb("bk")
     await ch.cb_book(cb, FakeState())
     text, markup = cb.message.replies[-1]
-    assert "Choose a manicure style" in text and "by photo" in text
+    assert "Выберите вид маникюра" in text and "по фото" in text
     assert all(x.startswith("🖼") for x in labels(markup) if "дизайном" in x), \
         "оба вида с примерами должны быть помечены"
     print("\nсписок видов: подпись и маркеры ✅")
@@ -166,7 +166,7 @@ async def main():
     print("    обложка:", photo)
     print("  кнопки:", labels(markup))
     assert photo == "PH_2"
-    assert any("Show examples (2)" in x for x in labels(markup)), "missing the show-examples button"
+    assert any("Показать примеры (2)" in x for x in labels(markup)), "нет кнопки показа примеров"
     assert f"svcex:{design}" in cbs(markup)
 
     # нажатие «Показать примеры» -> альбом всех примеров
@@ -179,7 +179,7 @@ async def main():
     assert files == ["PH_2", "PH_NEW"], "клиент должен увидеть все примеры вида"
     assert chat_id == 999
     text, markup = cb.message.replies[-1]
-    assert "examples: 2" in text
+    assert "примеров: 2" in text
     assert f"svcgo:{design}" in cbs(markup), "из примеров можно сразу выбрать время"
     assert st.data["service_id"] == design, "вид должен запомниться"
     print("  из показа примеров можно сразу выбрать время ✅")
@@ -190,7 +190,7 @@ async def main():
     cb = FakeCb(f"svc:{one}")
     await ch.cb_service(cb, FakeState())
     _, _, markup = cb.message.photos_sent[0]
-    assert not any("Show examples" in x for x in labels(markup)), \
+    assert not any("Показать примеры" in x for x in labels(markup)), \
         "при одном фото кнопка показа лишняя"
     print("один пример -> кнопки показа нет ✅")
 

@@ -1,4 +1,4 @@
-"""Shared helpers: formatting, keyboards, safe message editing."""
+"""Общие хелперы: форматирование, клавиатуры, безопасное редактирование."""
 import html
 import re
 
@@ -9,11 +9,11 @@ _PRICE_NUM = re.compile(r"(\d+(?:[.,]\d+)?)")
 
 
 def price_with_ext(price_text, extra):
-    """Service price + nail-extension surcharge.
+    """Цена услуги + доплата за наращивание.
 
-    Price is stored as text ("$40", "40 USD"), so we add to the first number found,
-    keeping the currency: price_with_ext('$40', 15) -> '$55'. If there's no number
-    in the price, the surcharge is appended as a separate note.
+    Цена хранится текстом («40€», «40 евро»), поэтому прибавляем к первому числу,
+    сохраняя валюту: price_with_ext('40€', 15) -> '55€'. Если числа в цене нет —
+    доплата дописывается отдельной пометкой.
     """
     price_text = price_text or ""
     if not extra:
@@ -23,11 +23,11 @@ def price_with_ext(price_text, extra):
         total = float(m.group(1).replace(",", ".")) + extra
         num = str(int(total)) if total == int(total) else f"{total:.2f}"
         return price_text[:m.start()] + num + price_text[m.end():]
-    note = f"+{extra} € (extension)"
+    note = f"+{extra} € (наращивание)"
     return f"{price_text} {note}" if price_text else note
 
-WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-WD_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+WD = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+WD_FULL = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
 
 def esc(v):
@@ -45,15 +45,15 @@ def kb(rows):
 def fmt_dur(minutes):
     h, m = divmod(int(minutes), 60)
     if h and m:
-        return f"{h}h {m}m"
+        return f"{h} ч {m} мин"
     if h:
-        return f"{h}h"
-    return f"{m}m"
+        return f"{h} ч"
+    return f"{m} мин"
 
 
 def fmt_dt(s):
-    """'2026-07-14 10:00' -> '14.07 at 10:00'"""
-    return f"{s[8:10]}.{s[5:7]} at {s[11:16]}"
+    """'2026-07-14 10:00' -> '14.07 в 10:00'"""
+    return f"{s[8:10]}.{s[5:7]} в {s[11:16]}"
 
 
 def fmt_d(s):
@@ -67,12 +67,12 @@ def date_label(d):
 
 def main_menu_kb(admin=False):
     rows = [
-        [btn("📅 Book", "bk")],
-        [btn("📋 My bookings", "my")],
-        [btn("👤 My profile", "prof")],
+        [btn("📅 Записаться", "bk")],
+        [btn("📋 Мои записи", "my")],
+        [btn("👤 Мои данные", "prof")],
     ]
     if admin:
-        rows.append([btn("⚙️ Owner panel", "a:menu")])
+        rows.append([btn("⚙️ Панель мастера", "a:menu")])
     return kb(rows)
 
 
@@ -80,10 +80,10 @@ _album_seen = set()
 
 
 def first_of_album(message):
-    """True if this is the first message of an album.
+    """True — если это первое сообщение альбома.
 
-    Telegram delivers an album as several messages, and aiogram handles them
-    concurrently. We must reply only once, or 5 photos would trigger 5 replies.
+    Telegram присылает альбом несколькими сообщениями, а aiogram обрабатывает их
+    параллельно. Отвечать нужно один раз, иначе на 5 фото прилетит 5 ответов.
     """
     gid = message.media_group_id
     if not gid:
@@ -100,7 +100,7 @@ async def safe_edit(message, text, markup=None):
     try:
         await message.edit_text(text, reply_markup=markup)
     except TelegramBadRequest as e:
-        # screen already shows exactly this — a repeat tap shouldn't create duplicates
+        # экран уже показывает ровно это — повторный клик не должен плодить дубликаты
         if "message is not modified" in str(e):
             return
         await message.answer(text, reply_markup=markup)

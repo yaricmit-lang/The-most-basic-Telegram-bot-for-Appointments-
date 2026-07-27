@@ -82,7 +82,7 @@ db.set_ref_comment(aid, "френч молочный")
 a = db.get_appointment(aid)
 assert refs.has_ref(a)
 print("сводка:", refs.summary(a))
-assert refs.summary(a) == "5 media · «френч молочный»"
+assert refs.summary(a) == "5 медиа · «френч молочный»"
 
 # --- отложенное уведомление мастеру не дублируется
 db.schedule_ref_notify(aid)

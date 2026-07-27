@@ -1,4 +1,4 @@
-"""SQLite: schema and all queries."""
+"""SQLite: схема и все запросы."""
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -126,14 +126,14 @@ CREATE TABLE IF NOT EXISTS settings(
 """
 
 DEFAULT_SETTINGS = {
-    "buffer_min": "15",       # break between sessions
-    "slot_step": "30",        # slot grid step
-    "min_lead_min": "60",     # how many minutes ahead a slot can still be booked
-    "horizon_days": "14",     # how many days ahead booking is open
-    "ref_deadline_hour": "5",  # reference accepted until 5:00 on appointment day
-    "ref_max": "5",           # how many photos/videos can be sent
-    "digest_hour": "8",       # what time the owner gets the daily digest
-    "ref_remind_hour": "20",  # what time to remind about the reference the evening before
+    "buffer_min": "15",       # перерыв между сеансами
+    "slot_step": "30",        # шаг сетки слотов
+    "min_lead_min": "60",     # за сколько минут до слота ещё можно записаться
+    "horizon_days": "14",     # на сколько дней вперёд открыта запись
+    "ref_deadline_hour": "5",  # референс принимается до 5:00 дня записи
+    "ref_max": "5",           # сколько фото/видео можно прислать
+    "digest_hour": "8",       # во сколько мастеру приходит сводка на день
+    "ref_remind_hour": "20",  # во сколько накануне напомнить про референс
 }
 
 
@@ -146,7 +146,7 @@ def conn():
 
 
 def _migrate():
-    """Add columns to an already-existing database (no data is lost)."""
+    """Досоздаём колонки в уже существующей базе (данные не теряются)."""
     c = conn()
     cols = {r["name"] for r in c.execute("PRAGMA table_info(appointments)")}
     for col in ("ref_comment", "ref_status"):
@@ -161,9 +161,9 @@ def _migrate():
     if "ext_price_per_nail" not in cols:
         c.execute("ALTER TABLE services ADD COLUMN ext_price_per_nail INTEGER DEFAULT 0")
         c.execute("ALTER TABLE services ADD COLUMN ext_min_per_nail INTEGER DEFAULT 0")
-        # initial extension rates guessed from the service title (owner can edit
-        # them in the panel): medium length — 5/15 min per nail, long — 10/20 min.
-        # Matched in Python: SQLite's lower() doesn't lowercase non-ASCII scripts.
+        # первичные тарифы наращивания по названию вида (мастер меняет в панели):
+        # средняя длина — 5 €/15 мин за ноготь, длинная — 10 €/20 мин.
+        # Сопоставление в Python: lower() в SQLite не понижает кириллицу.
         for r in c.execute("SELECT id, title FROM services").fetchall():
             t = (r["title"] or "").lower()
             if "средн" in t or "medium" in t:
@@ -172,7 +172,7 @@ def _migrate():
             elif "длинн" in t or "long" in t:
                 c.execute("UPDATE services SET ext_price_per_nail=10, ext_min_per_nail=20 "
                           "WHERE id=?", (r["id"],))
-    # single service photo moved into the example gallery: migrate it, then clear the column
+    # одиночное фото услуги переехало в галерею примеров: переносим и гасим колонку
     for r in c.execute("SELECT id, photo_id FROM services WHERE photo_id != ''").fetchall():
         dup = c.execute(
             "SELECT 1 FROM service_photos WHERE service_id=? AND file_id=?",
@@ -182,9 +182,9 @@ def _migrate():
             c.execute("INSERT INTO service_photos(service_id, file_id) VALUES(?,?)",
                       (r["id"], r["photo_id"]))
     c.execute("UPDATE services SET photo_id='' WHERE photo_id != ''")
-    # Duplicate protection: at most one notification of each type per appointment
-    # (except refnew, which legitimately repeats when the client sends more media).
-    # First clean up any duplicates already accumulated, keeping the earliest row.
+    # Защита от повторов: на одну запись — не более одного уведомления каждого
+    # типа (кроме refnew, который законно повторяется, когда клиент дошлёт референс).
+    # Сначала чистим уже накопившиеся дубли, оставляя самую раннюю строку.
     c.execute("""
         DELETE FROM notifications WHERE type != 'refnew' AND id NOT IN (
             SELECT MIN(id) FROM notifications WHERE type != 'refnew'
@@ -283,8 +283,8 @@ def create_client(name, phone, tg_id=None):
 
 
 def merge_offline_client(client_id, phone):
-    """If the owner previously added this client manually (no Telegram) with the
-    same phone number, move their history onto the Telegram account that just showed up."""
+    """Если админ раньше завёл клиента вручную (без Telegram) с тем же номером —
+    переносим его историю на пришедший Telegram-аккаунт."""
     c = conn()
     row = c.execute(
         "SELECT * FROM clients WHERE phone=? AND tg_id IS NULL AND id != ?",
@@ -349,12 +349,12 @@ def update_service_field(sid, field, value):
 
 
 def effective_duration(svc, nails):
-    """Session duration including nail extension."""
+    """Длительность сеанса с учётом наращивания."""
     return svc["duration_min"] + (nails or 0) * (svc["ext_min_per_nail"] or 0)
 
 
 def ext_extra_price(svc, nails):
-    """Nail-extension surcharge, €."""
+    """Доплата за наращивание, €."""
     return (nails or 0) * (svc["ext_price_per_nail"] or 0)
 
 
@@ -363,14 +363,14 @@ def toggle_service(sid):
     conn().commit()
 
 
-# ---------- example photos (service gallery) ----------
+# ---------- примеры работ (галерея услуги) ----------
 
-SVC_PHOTO_MAX = 10  # Telegram's album limit
+SVC_PHOTO_MAX = 10  # предел альбома в Telegram
 
 
 def add_service_photo(sid, file_id):
-    """False if the gallery is already full. No await inside, so an album from
-    the owner can't slip past the limit."""
+    """False — если галерея уже заполнена. Без await внутри, поэтому альбом
+    от мастера не может пробить лимит."""
     c = conn()
     n = c.execute(
         "SELECT COUNT(*) AS n FROM service_photos WHERE service_id=?", (sid,)
@@ -399,7 +399,7 @@ def service_photos_count(sid):
 
 
 def service_cover(sid):
-    """First gallery photo — the service's cover image."""
+    """Первое фото галереи — обложка вида."""
     r = conn().execute(
         "SELECT file_id FROM service_photos WHERE service_id=? ORDER BY id LIMIT 1", (sid,)
     ).fetchone()
@@ -412,7 +412,7 @@ def delete_service_photo(pid):
 
 
 def services_with_photos():
-    """IDs of services that have example photos — one query, no per-service loop."""
+    """id услуг, у которых есть примеры — одним запросом, без цикла по услугам."""
     return {r["service_id"]
             for r in conn().execute("SELECT DISTINCT service_id FROM service_photos")}
 
@@ -427,16 +427,16 @@ def list_masters(only_active=True):
 
 
 def owner_master():
-    """The single master record = the owner."""
+    """Единственный мастер = владелец."""
     return conn().execute("SELECT * FROM masters ORDER BY id LIMIT 1").fetchone()
 
 
 def ensure_owner_master(admin_ids):
-    """Guarantee exactly one master record, linked to the owner/admin."""
+    """Гарантируем ровно одного мастера, привязанного к владельцу-админу."""
     admin_id = min(admin_ids) if admin_ids else None
     masters = list_masters(only_active=False)
     if not masters:
-        add_master("Owner", admin_id)
+        add_master("Мастер", admin_id)
     elif admin_id and masters[0]["tg_id"] is None:
         update_master_field(masters[0]["id"], "tg_id", admin_id)
 
@@ -551,11 +551,11 @@ def set_appointment_status(aid, status):
 
 
 def transition_status(aid, from_statuses, to_status):
-    """Atomic status transition. True if we're the one who made it.
+    """Атомарный переход статуса. True — если перевели именно мы.
 
-    aiogram handles updates concurrently, so two quick taps on "Cancel" or
-    "Confirm" can race past the status check. A single UPDATE ... WHERE
-    status IN (...) guarantees the notification fires exactly once.
+    aiogram обрабатывает апдейты параллельно, поэтому два быстрых тапа по «Отменить»
+    или «Подтвердить» могут гонкой пройти проверку статуса. Один UPDATE ... WHERE
+    status IN (...) гарантирует, что уведомление уйдёт ровно один раз.
     """
     placeholders = ",".join("?" * len(from_statuses))
     c = conn()
@@ -601,7 +601,7 @@ def client_has_upcoming(client_id):
 
 
 def last_for_repeat(client_id):
-    """Last non-cancelled appointment — powers the "Book again" button."""
+    """Последняя не отменённая запись — основа кнопки «Записаться снова»."""
     return conn().execute(
         _APPT_SQL + " WHERE a.client_id=? AND a.status != 'cancelled' "
         "ORDER BY a.starts_at DESC LIMIT 1",
@@ -715,8 +715,8 @@ def mark_waitlist_notified(wid):
 # ---------- notifications ----------
 
 def add_notification(appt_id, typ, due_at):
-    # OR IGNORE + the idx_notif_once unique index: a repeat call for the same
-    # appointment and type (double tap, replayed update) creates no second row.
+    # OR IGNORE + уникальный индекс idx_notif_once: повторный вызов для той же
+    # записи и типа (двойной тап, переотправка апдейта) не создаёт второй строки.
     conn().execute(
         "INSERT OR IGNORE INTO notifications(appointment_id,type,due_at) VALUES(?,?,?)",
         (appt_id, typ, due_at),
@@ -737,10 +737,10 @@ def mark_notification_sent(nid):
 
 
 def claim_notification(nid):
-    """True if we're the one who claimed this notification.
+    """True — если уведомление забрали именно мы.
 
-    Marking and checking happen in a single UPDATE ... WHERE sent=0, so even
-    two processes can't send the same notification twice.
+    Пометка и проверка идут одним UPDATE ... WHERE sent=0, поэтому даже два
+    процесса не смогут отправить одно уведомление дважды.
     """
     c = conn()
     cur = c.execute("UPDATE notifications SET sent=1 WHERE id=? AND sent=0", (nid,))
@@ -753,13 +753,13 @@ def drop_pending_notifications(appt_id):
     conn().commit()
 
 
-# ---------- reference photos ----------
+# ---------- референсы ----------
 
 def add_ref(appt_id, file_id, media_type, limit):
-    """Add media to the reference. False if the limit is already reached.
+    """Кладём медиа в референс. False — если лимит уже выбран.
 
-    The check and insert happen without an await in between, so a multi-photo
-    album (aiogram handles them concurrently) can't slip past the limit.
+    Проверка и вставка идут без await, поэтому альбом из нескольких фото
+    (aiogram обрабатывает их параллельно) не может пробить лимит.
     """
     c = conn()
     n = c.execute(
@@ -805,10 +805,10 @@ def set_ref_status(appt_id, status):
 
 
 def set_ref_status_from(appt_id, status, from_statuses):
-    """Atomically changes the reference status. True if we're the one who changed it.
+    """Атомарно меняет статус референса. True — если поменяли именно мы.
 
-    The "master confirmed" message to the client is sent only on a real transition,
-    so two quick taps on "Got it" don't send the client two identical messages.
+    Клиенту «мастер подтвердил» шлём только на реальном переходе, поэтому два
+    быстрых тапа по «Всё есть» не отправят клиенту два одинаковых сообщения.
     """
     placeholders = ",".join("?" * len(from_statuses))
     c = conn()
@@ -821,7 +821,7 @@ def set_ref_status_from(appt_id, status, from_statuses):
 
 
 def schedule_ref_notify(appt_id):
-    """Delayed notification to the owner, so the whole album goes out as one batch."""
+    """Отложенное уведомление мастеру — чтобы альбом ушёл одним пакетом."""
     c = conn()
     r = c.execute(
         "SELECT 1 FROM notifications WHERE appointment_id=? AND type='refnew' AND sent=0",
@@ -845,7 +845,7 @@ def mark_ref_notified(appt_id):
     conn().commit()
 
 
-# ---------- messaging ----------
+# ---------- переписка ----------
 
 def add_message(appt_id, sender, text):
     conn().execute(
@@ -864,11 +864,11 @@ def messages_count(appt_id):
 # ---------- feedback ----------
 
 def save_rating(appt_id, rating):
-    """True if this is the first time a rating was set (only then do we notify the owner).
+    """True — если оценку поставили впервые (мастеру шлём только тогда).
 
-    appointment_id in feedback is unique, so the first INSERT succeeds, while a
-    repeat tap (the star buttons stay on the old message) updates the rating but
-    returns False — the owner won't get a second notification.
+    appointment_id в feedback уникален, поэтому первый INSERT проходит, а повторный
+    тап (кнопки-звёзды остаются на старом сообщении) обновляет оценку, но возвращает
+    False — второго уведомления мастеру не будет.
     """
     c = conn()
     existed = c.execute(

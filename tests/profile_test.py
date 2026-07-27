@@ -69,7 +69,7 @@ async def main():
             print("   ", line)
     print("  кнопки:", labels)
     assert "Test Client" in text and "+79995550001" in text and "@test_owner" in text
-    assert any("name" in x.lower() for x in labels) and any("phone" in x.lower() for x in labels)
+    assert any("имя" in x.lower() for x in labels) and any("телефон" in x.lower() for x in labels)
 
     menu = [b.callback_data for row in ui.main_menu_kb().inline_keyboard for b in row]
     assert "prof" in menu, "кабинет должен быть доступен из главного меню"

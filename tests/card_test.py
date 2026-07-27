@@ -74,7 +74,7 @@ async def main():
     await ah.cb_ref_later(cb)
     print("Отложено ->", buttons(cb.message.markup))
     assert "a:menu" in targets(cb.message.markup), "нет выхода в панель мастера"
-    assert "Postponed" in cb.message.text
+    assert "Отложено" in cb.message.text
     # статус не выставлен -> напоминание в конце дня подхватит
     assert db.get_appointment(aid)["ref_status"] == ""
     print("  выход в панель ✅, статус не выставлен ✅")
@@ -100,7 +100,7 @@ async def main():
     cb2 = FakeCb(f"a:refok:{aid}", bot2)
     await ah.cb_ref_ok(cb2)
     assert not bot2.sent, "второе подтверждение клиенту слать нельзя"
-    assert cb2.answers == ["Already confirmed"]
+    assert cb2.answers == ["Уже подтверждено"]
     print("  повторное нажатие -> клиенту ничего не ушло ✅")
 
     print()

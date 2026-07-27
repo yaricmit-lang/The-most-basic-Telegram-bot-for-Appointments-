@@ -1,4 +1,4 @@
-"""Owner/client notifications, references, messaging, and waitlist."""
+"""Уведомления мастеру/клиенту, референсы, переписка и лист ожидания."""
 import logging
 from datetime import datetime, timedelta
 
@@ -17,12 +17,12 @@ async def _send(bot, chat_id, text, markup=None):
         await bot.send_message(chat_id, text, reply_markup=markup)
         return True
     except Exception as e:
-        log.warning("Failed to send message to %s: %s", chat_id, e)
+        log.warning("Не удалось отправить сообщение %s: %s", chat_id, e)
         return False
 
 
 def _master_targets(appt=None, exclude=None):
-    """Who gets system notifications: the master + admins."""
+    """Кому слать служебные уведомления: мастеру + админам."""
     ids = set(config.ADMIN_IDS)
     if appt is not None and appt["master_tg"]:
         ids.add(appt["master_tg"])
@@ -43,7 +43,7 @@ def _client_line(appt):
 
 
 def _day_bounds(date):
-    """Day bounds for appointments_between: [date 00:00, next day 00:00)."""
+    """Границы дня для appointments_between: [date 00:00, следующий день 00:00)."""
     nxt = (datetime.strptime(date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     return date + " 00:00", nxt + " 00:00"
 
@@ -52,26 +52,26 @@ def ext_mark(appt):
     if not appt["ext_nails"]:
         return ""
     note = f", +{appt['ext_price']} €" if appt["ext_price"] else ""
-    return f"\n➕ Extension: {appt['ext_nails']} nail(s){note}"
+    return f"\n➕ Наращивание: {appt['ext_nails']} ног.{note}"
 
 
 async def master_new_appointment(bot, appt, actor_tg=None):
     text = (
-        f"🆕 <b>New booking</b>\n"
+        f"🆕 <b>Новая запись</b>\n"
         f"📆 {fmt_dt(appt['starts_at'])}–{appt['ends_at'][11:16]} — "
         f"{esc(appt['service_title'])}{ext_mark(appt)}\n"
         f"👤 {_client_line(appt)}\n"
-        f"💇 Master: {esc(appt['master_name'])}"
+        f"💇 Мастер: {esc(appt['master_name'])}"
     )
     if appt["created_by"] == "admin":
-        text += "\n✍️ Created manually"
+        text += "\n✍️ Создана вручную"
     for chat_id in _master_targets(appt, exclude=actor_tg):
         await _send(bot, chat_id, text)
 
 
 async def master_cancelled(bot, appt, actor_tg=None):
     text = (
-        f"❌ <b>Booking cancelled</b>\n"
+        f"❌ <b>Отмена записи</b>\n"
         f"📆 {fmt_dt(appt['starts_at'])} — {esc(appt['service_title'])}\n"
         f"👤 {_client_line(appt)}"
     )
@@ -80,19 +80,19 @@ async def master_cancelled(bot, appt, actor_tg=None):
 
 
 async def client_admin_created(bot, appt):
-    """Key rule: a booking the owner creates manually is still shown to the client."""
+    """Ключевое: запись, созданную админом вручную, клиент тоже видит."""
     if not appt["client_tg"]:
         return
     text = (
-        f"📌 <b>You've been booked:</b>\n"
+        f"📌 <b>Вас записали:</b>\n"
         f"💅 {esc(appt['service_title'])}{ext_mark(appt)}\n"
-        f"👤 Master: {esc(appt['master_name'])}\n"
+        f"👤 Мастер: {esc(appt['master_name'])}\n"
         f"📆 {fmt_dt(appt['starts_at'])}\n\n"
-        f"If this time doesn't work — cancel the booking."
+        f"Если время не подходит — отмените запись."
     )
     markup = kb([
-        [btn("✅ Confirm", f"cfm:{appt['id']}")],
-        [btn("❌ Cancel", f"ccl:{appt['id']}")],
+        [btn("✅ Подтверждаю", f"cfm:{appt['id']}")],
+        [btn("❌ Отменить", f"ccl:{appt['id']}")],
     ])
     await _send(bot, appt["client_tg"], text, markup)
 
@@ -101,16 +101,16 @@ async def client_cancelled_by_admin(bot, appt):
     if not appt["client_tg"]:
         return
     text = (
-        f"😔 Unfortunately your booking was cancelled:\n"
+        f"😔 К сожалению, ваша запись отменена:\n"
         f"{esc(appt['service_title'])}, {fmt_dt(appt['starts_at'])}\n\n"
-        f"You can pick another time."
+        f"Вы можете выбрать другое время."
     )
-    markup = kb([[btn("📅 Book", "bk")]])
+    markup = kb([[btn("📅 Записаться", "bk")]])
     await _send(bot, appt["client_tg"], text, markup)
 
 
 async def run_waitlist(bot, master_id, date, exclude_client=None):
-    """A slot opened up — notify whoever was waiting for that day."""
+    """Освободилось окно — зовём тех, кто ждал этот день."""
     for w in db.waitlist_for(master_id, date):
         if exclude_client and w["client_id"] == exclude_client:
             continue
@@ -118,19 +118,19 @@ async def run_waitlist(bot, master_id, date, exclude_client=None):
         if not w["tg_id"]:
             continue
         text = (
-            f"🔔 Good news! A slot opened up on {fmt_d(date)}.\n"
-            f"Grab it before it's gone:"
+            f"🔔 Хорошие новости! На {fmt_d(date)} освободилось окно.\n"
+            f"Успейте записаться:"
         )
         markup = kb([
-            [btn("⚡ Book now", f"wlbk:{w['service_id']}:{w['master_id']}:{w['date']}")]
+            [btn("⚡ Записаться", f"wlbk:{w['service_id']}:{w['master_id']}:{w['date']}")]
         ])
         await _send(bot, w["tg_id"], text, markup)
 
 
-# ---------- reference photos ----------
+# ---------- референсы ----------
 
 async def _send_media(bot, chat_id, appt):
-    """Photos/videos as an album; video notes and GIFs separately (Telegram can't mix them in)."""
+    """Фото/видео альбомом, кружочки и GIF — отдельно (Telegram не мешает их в альбом)."""
     group, singles = [], []
     for r in db.refs_for(appt["id"]):
         if r["media_type"] == "photo":
@@ -148,12 +148,12 @@ async def _send_media(bot, chat_id, appt):
             else:
                 await bot.send_animation(chat_id, r["file_id"])
     except Exception as e:
-        log.warning("Reference media failed to send to %s: %s", chat_id, e)
+        log.warning("Медиа референса не отправлены в %s: %s", chat_id, e)
 
 
 def ref_card(appt):
     text = (
-        f"🖼 <b>Reference for the booking</b>\n"
+        f"🖼 <b>Референс к записи</b>\n"
         f"📆 {fmt_dt(appt['starts_at'])} — {esc(appt['service_title'])}\n"
         f"👤 {_client_line(appt)}"
     )
@@ -161,25 +161,25 @@ def ref_card(appt):
         text += f"\n💬 «{esc(appt['ref_comment'])}»"
     _, late = refs_mod.window(appt)
     if late:
-        text += "\n\n⚠️ Same-day booking — the reference was sent after the deadline."
+        text += "\n\n⚠️ Запись в тот же день — референс прислан после дедлайна."
     markup = kb([
-        [btn("✅ Got it", f"a:refok:{appt['id']}"),
-         btn("❌ No materials", f"a:refno:{appt['id']}")],
-        [btn("✍️ Message client", f"a:rep:{appt['id']}")],
-        [btn("⏰ Reply later", f"a:reflater:{appt['id']}")],
+        [btn("✅ Всё есть", f"a:refok:{appt['id']}"),
+         btn("❌ Нет материалов", f"a:refno:{appt['id']}")],
+        [btn("✍️ Написать клиенту", f"a:rep:{appt['id']}")],
+        [btn("⏰ Ответить позже", f"a:reflater:{appt['id']}")],
     ])
     return text, markup
 
 
 async def send_reference_to(bot, chat_id, appt):
-    """Media + status-button card to a single recipient."""
+    """Медиа + карточка с кнопками-статусами одному адресату."""
     await _send_media(bot, chat_id, appt)
     text, markup = ref_card(appt)
     await _send(bot, chat_id, text, markup)
 
 
 async def master_reference(bot, appt):
-    """Client sent/updated a reference → owner gets the media + a card with buttons."""
+    """Клиент прислал/обновил референс → мастеру медиа + карточка с кнопками."""
     for chat_id in _master_targets(appt):
         await send_reference_to(bot, chat_id, appt)
 
@@ -188,48 +188,48 @@ async def client_ref_ok(bot, appt):
     if not appt["client_tg"]:
         return
     await _send(bot, appt["client_tg"],
-                f"✅ The master looked at your reference for {fmt_dt(appt['starts_at'])} — "
-                f"all set, materials will be ready. See you soon!")
+                f"✅ Мастер посмотрел ваш референс к записи {fmt_dt(appt['starts_at'])} — "
+                f"всё есть, материалы подготовит. До встречи!")
 
 
 async def client_master_message(bot, appt, text):
-    """Message from the owner to the client (no materials / free text)."""
+    """Сообщение мастера клиенту (нет материалов / произвольное)."""
     if not appt["client_tg"]:
         return False
     body = (
-        f"✉️ <b>Message from the master</b>\n"
-        f"<i>about the booking on {fmt_dt(appt['starts_at'])}, {esc(appt['service_title'])}</i>\n\n"
+        f"✉️ <b>Сообщение от мастера</b>\n"
+        f"<i>по записи {fmt_dt(appt['starts_at'])}, {esc(appt['service_title'])}</i>\n\n"
         f"{esc(text)}"
     )
     markup = kb([
-        [btn("✍️ Reply", f"crep:{appt['id']}")],
-        [btn("❌ Cancel booking", f"ccl:{appt['id']}")],
+        [btn("✍️ Ответить", f"crep:{appt['id']}")],
+        [btn("❌ Отменить запись", f"ccl:{appt['id']}")],
     ])
     return await _send(bot, appt["client_tg"], body, markup)
 
 
 async def master_client_message(bot, appt, text):
-    """Message from the client to the owner."""
+    """Сообщение клиента мастеру."""
     body = (
-        f"✉️ <b>Message from the client</b>\n"
+        f"✉️ <b>Сообщение от клиента</b>\n"
         f"👤 {_client_line(appt)}\n"
-        f"<i>about the booking on {fmt_dt(appt['starts_at'])}, {esc(appt['service_title'])}</i>\n\n"
+        f"<i>по записи {fmt_dt(appt['starts_at'])}, {esc(appt['service_title'])}</i>\n\n"
         f"{esc(text)}"
     )
-    markup = kb([[btn("✍️ Reply", f"a:rep:{appt['id']}")]])
+    markup = kb([[btn("✍️ Ответить", f"a:rep:{appt['id']}")]])
     for chat_id in _master_targets(appt):
         await _send(bot, chat_id, body, markup)
 
 
 async def morning_digest(bot, date):
-    """Daily digest: all bookings + references. Nothing is sent if there are none."""
+    """Сводка на день: все записи + референсы. Ничего не шлём, если записей нет."""
     appts = db.appointments_between(*_day_bounds(date))
     if not appts:
         return
-    lines = [f"☀️ <b>Bookings today: {len(appts)}</b>\n"]
+    lines = [f"☀️ <b>Сегодня записей: {len(appts)}</b>\n"]
     rows = []
     for a in appts:
-        ext = f" ➕{a['ext_nails']} nail(s)" if a["ext_nails"] else ""
+        ext = f" ➕{a['ext_nails']} ног." if a["ext_nails"] else ""
         lines.append(
             f"🕐 <b>{a['starts_at'][11:16]}–{a['ends_at'][11:16]}</b> — "
             f"{esc(a['service_title'])}{ext}, "
@@ -242,14 +242,14 @@ async def morning_digest(bot, date):
             rows.append([btn(f"🖼 {a['starts_at'][11:16]} {a['client_name'] or ''}".strip(),
                              f"a:refv:{a['id']}")])
         else:
-            lines.append("      ⚠️ no reference sent")
-    rows.append([btn("📆 All bookings", "a:apd:0")])
+            lines.append("      ⚠️ референс не прислан")
+    rows.append([btn("📆 Все записи", "a:apd:0")])
     for chat_id in _master_targets():
         await _send(bot, chat_id, "\n".join(lines), kb(rows))
 
 
 async def materials_check(bot, date):
-    """End of the work day: tomorrow's references still awaiting a reply."""
+    """Конец рабочего дня: референсы на завтра, оставшиеся без ответа мастера."""
     pending = [
         a for a in db.appointments_between(*_day_bounds(date))
         if refs_mod.has_ref(a) and not a["ref_status"]
@@ -257,8 +257,8 @@ async def materials_check(bot, date):
     if not pending:
         return False
     lines = [
-        "🧰 <b>Check materials for tomorrow</b>\n",
-        f"References awaiting reply: {len(pending)}\n",
+        "🧰 <b>Проверьте материалы на завтра</b>\n",
+        f"Референсов без ответа: {len(pending)}\n",
     ]
     rows = []
     for a in pending:
@@ -269,7 +269,7 @@ async def materials_check(bot, date):
             lines.append(f"      🖼 {esc(s)}")
         rows.append([btn(f"🖼 {a['starts_at'][11:16]} {a['client_name'] or ''}".strip(),
                          f"a:refv:{a['id']}")])
-    rows.append([btn("📆 Tomorrow's bookings", "a:apd:1")])
+    rows.append([btn("📆 Записи на завтра", "a:apd:1")])
     for chat_id in _master_targets():
         await _send(bot, chat_id, "\n".join(lines), kb(rows))
     return True
@@ -278,12 +278,12 @@ async def materials_check(bot, date):
 async def admins_feedback(bot, appt, rating=None, comment=None):
     if rating is not None:
         text = (
-            f"⭐ Rating {rating}/5 from {_client_line(appt)}\n"
+            f"⭐ Оценка {rating}/5 от {_client_line(appt)}\n"
             f"({esc(appt['service_title'])}, {fmt_dt(appt['starts_at'])})"
         )
     else:
         text = (
-            f"💬 Review from {_client_line(appt)}:\n«{esc(comment)}»\n"
+            f"💬 Отзыв от {_client_line(appt)}:\n«{esc(comment)}»\n"
             f"({esc(appt['service_title'])}, {fmt_dt(appt['starts_at'])})"
         )
     for chat_id in _master_targets(appt):

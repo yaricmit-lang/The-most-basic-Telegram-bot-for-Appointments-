@@ -1,10 +1,10 @@
-"""Reference-photo acceptance window.
+"""Окно приёма референса.
 
-Rule: accepted until 5:00 AM on the day of the appointment (hour is configurable) —
-the master needs time to prepare materials. But if the client booked AFTER that
-moment (same-day booking), the deadline would already be in the past and nothing
-could ever be sent — so for such appointments the window stays open until the visit
-starts, and the bot warns that the master may not have time to prepare.
+Правило: принимаем до 5:00 утра дня записи (час настраивается) — мастеру нужно
+время подготовить материалы. Но если клиент записался уже ПОСЛЕ этого момента
+(запись в тот же день), дедлайн был бы в прошлом и прислать было бы нельзя вообще —
+поэтому для таких записей окно открыто до начала визита, а бот предупреждает,
+что мастер может не успеть подготовиться.
 """
 import db
 
@@ -12,14 +12,14 @@ MEDIA_TYPES = ("photo", "video", "video_note", "animation")
 
 
 def window(appt):
-    """(deadline 'YYYY-MM-DD HH:MM', late) — cutoff for accepting a reference."""
+    """(дедлайн 'YYYY-MM-DD HH:MM', late) — до какого момента принимаем референс."""
     hour = db.get_int("ref_deadline_hour", 5)
     deadline = f"{appt['starts_at'][:10]} {hour:02d}:00"
     created = (appt["created_at"] or "")[:16]
     if created and created > deadline:
-        # booked after the deadline already — otherwise sending would be impossible
+        # записались уже после дедлайна — иначе прислать было бы нельзя вообще
         return appt["starts_at"], True
-    # visit is earlier than the deadline (early slot) — window can't outlive the visit
+    # визит раньше дедлайна (ранний слот) — окно не может пережить начало визита
     return min(deadline, appt["starts_at"]), False
 
 
@@ -35,18 +35,18 @@ def has_ref(appt):
 
 
 def summary(appt):
-    """Short reference summary line for the appointment card."""
+    """Короткая строка о референсе для карточки записи."""
     n = db.refs_count(appt["id"])
     bits = []
     if n:
-        bits.append(f"{n} media")
+        bits.append(f"{n} медиа")
     if appt["ref_comment"]:
         bits.append(f"«{appt['ref_comment']}»")
     return " · ".join(bits) if bits else ""
 
 
 def extract_media(message):
-    """(file_id, media_type) from a message, or None."""
+    """(file_id, media_type) из сообщения или None."""
     if message.photo:
         return message.photo[-1].file_id, "photo"
     if message.video:

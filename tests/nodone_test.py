@@ -44,8 +44,8 @@ async def main():
     markup = ch.ref_kb(a)
     labels = [b.text for row in markup.inline_keyboard for b in row]
     print("пустой экран референса ->", labels)
-    assert not any("Done" in x for x in labels), "the Done button should disappear"
-    assert any("Back" in x for x in labels), "the exit button should remain"
+    assert not any("Готово" in x for x in labels), "кнопка Готово должна исчезнуть"
+    assert any("Назад" in x for x in labels), "выход должен остаться"
 
     # --- после присланного фото: удалить всё + назад, но без Готово
     db.add_ref(aid, "file_1", "photo", 5)
@@ -53,8 +53,8 @@ async def main():
     a = db.get_appointment(aid)
     labels = [b.text for row in ch.ref_kb(a).inline_keyboard for b in row]
     print("после фото            ->", labels)
-    assert not any("Done" in x for x in labels)
-    assert any("Delete" in x for x in labels)
+    assert not any("Готово" in x for x in labels)
+    assert any("Удалить" in x for x in labels)
 
     # --- КЛЮЧЕВОЕ: клиент ничего не нажимает, просто уходит.
     # Отложенное уведомление обязано доставить референс мастеру.
@@ -66,9 +66,9 @@ async def main():
     bot = FakeBot()
     await scheduler._send_due(bot)
     print("уведомления мастеру   ->", bot.msgs)
-    assert bot.msgs, "the master must receive the reference without tapping Done"
+    assert bot.msgs, "мастер обязан получить референс без нажатия «Готово»"
     assert bot.msgs[0][0] == 111111111
-    assert "Reference for the booking" in bot.msgs[0][1]
+    assert "Референс к записи" in bot.msgs[0][1]
     assert bot.albums == [(111111111, 1)], "фото должно уйти вместе с карточкой"
     print("референс дошёл сам ✅")
 
