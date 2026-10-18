@@ -1,5 +1,9 @@
 # Appointment Booking Bot
 
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0)](https://docs.aiogram.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A Telegram bot for booking appointments — nails, haircuts, personal training,
 or any other service that runs on a schedule. Built with Python, [aiogram
 3](https://docs.aiogram.dev/) and SQLite; everything lives in a single local
@@ -167,16 +171,20 @@ tests/smoke_test.py`.
 ## Project layout
 
 ```
-bot.py            Entry point: starts the bot and the notification worker
-config.py         Environment configuration (token, admin IDs, DB path, language)
-db.py             SQLite schema and all queries
-i18n.py           Bot-facing text in every supported language
-ui.py             Formatting and keyboard helpers
-slots.py          Free-slot computation (working hours, lunch, buffer)
-refs.py           The reference-upload window
-notify.py         Outgoing notifications to clients and the master
-scheduler.py       Background loop for scheduled notifications
-handlers/client.py Client-facing conversation flows
-handlers/admin.py  Owner-panel conversation flows
-tests/            Standalone test scripts (see Testing above)
+bot.py              Entry point: starts the bot and the notification worker
+config.py           Environment configuration (token, admin IDs, DB path, language)
+db.py               SQLite schema and all queries
+i18n.py             Bot-facing text in every supported language
+ui.py               Formatting and keyboard helpers
+slots.py            Free-slot computation (working hours, lunch, buffer)
+refs.py             The reference-upload window
+notify.py           Outgoing notifications to clients and the master
+scheduler.py        Background loop for scheduled notifications
+handlers/client.py  Client-facing conversation flows
+handlers/admin.py   Owner-panel conversation flows
+tests/              Standalone test scripts (see Testing above)
 ```
+
+## License
+
+[MIT](LICENSE)
