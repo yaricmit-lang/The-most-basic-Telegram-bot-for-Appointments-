@@ -1,14 +1,15 @@
-"""Галерея примеров вида маникюра: управление у мастера, показ клиенту, миграция."""
+"""Service example gallery: management by the master, display to the client, migration."""
 import asyncio
 import os
+import tempfile
 import sqlite3
 import sys
 
-DB = "/private/tmp/claude-501/-Users-admin-Claude/f8db589b-7a41-413d-a71d-7e652b630980/scratchpad/svcph.db"
+DB = os.path.join(tempfile.gettempdir(), "svcph.db")
 os.environ["DB_PATH"] = DB
 if os.path.exists(DB):
     os.remove(DB)
-sys.path.insert(0, "/Users/admin/Claude/appointment-bot")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
 import config
@@ -16,6 +17,8 @@ config.ADMIN_IDS = frozenset()  # isolate tests from the developer's real .env
 
 db.init_db()
 mid = db.add_master("Test Master", 111111111)
+# Titles stay in Russian on purpose: they let the "both styles get a gallery
+# marker" check below key off the shared word in their titles.
 simple = db.add_service("Короткий с простым дизайном", 90, "40 евро", False, 1, 25)
 design = db.add_service("Длинный со сложным дизайном", 150, "60 евро", False, 1, 25)
 
@@ -88,122 +91,122 @@ def cbs(markup):
 
 
 async def main():
-    # === мастер наполняет галерею ===
+    # === the master fills the gallery ===
     st = FakeState(ph_sid=design)
     for i in range(3):
         await ah.got_service_photo(FakeMsg(photo=f"PH_{i}"), st)
     assert db.service_photos_count(design) == 3
-    assert db.service_cover(design) == "PH_0", "обложка — первое фото"
-    print("мастер добавил 3 примера, обложка:", db.service_cover(design), "✅")
+    assert db.service_cover(design) == "PH_0", "the cover is the first photo"
+    print("master added 3 examples, cover:", db.service_cover(design), "✅")
 
-    # альбом от мастера -> один ответ, но все фото сохраняются
+    # an album from the master -> one reply, but every photo is saved
     st = FakeState(ph_sid=simple)
     m1, m2, m3 = (FakeMsg(photo=f"A_{i}", group="album1") for i in range(3))
     await ah.got_service_photo(m1, st)
     await ah.got_service_photo(m2, st)
     await ah.got_service_photo(m3, st)
-    assert db.service_photos_count(simple) == 3, "все фото альбома должны сохраниться"
+    assert db.service_photos_count(simple) == 3, "every photo in the album should be saved"
     answered = sum(1 for m in (m1, m2, m3) if m.replies)
-    assert answered == 1, f"на альбом должен быть 1 ответ, а не {answered}"
-    print("альбом: 3 фото сохранены, ответ один ✅")
+    assert answered == 1, f"an album should get 1 reply, not {answered}"
+    print("album: 3 photos saved, one reply ✅")
 
-    # лимит галереи
+    # gallery limit
     for i in range(20):
         db.add_service_photo(simple, f"X_{i}")
     assert db.service_photos_count(simple) == db.SVC_PHOTO_MAX
-    print(f"лимит галереи соблюдён: {db.SVC_PHOTO_MAX} ✅")
+    print(f"gallery limit enforced: {db.SVC_PHOTO_MAX} ✅")
 
-    # === экран галереи у мастера ===
+    # === the master's gallery screen ===
     bot = FakeBot()
     await ah.send_gallery(bot, 111111111, design)
-    assert bot.albums[0][1] == ["PH_0", "PH_1", "PH_2"], "должен уйти альбом примеров"
+    assert bot.albums[0][1] == ["PH_0", "PH_1", "PH_2"], "the examples album should go out"
     text, markup = bot.msgs[0]
-    print("\nэкран галереи:")
+    print("\ngallery screen:")
     for line in text.splitlines():
         if line.strip():
             print("   ", line)
-    print("  кнопки:", labels(markup))
-    assert ["🗑 1", "🗑 2", "🗑 3"] == [x for x in labels(markup) if x.startswith("🗑")]
-    assert any("Добавить фото" in x for x in labels(markup))
-    assert any("Переименовать" in x for x in labels(markup)), "переименование должно быть тут же"
+    print("  buttons:", labels(markup))
+    assert ["\U0001F5D1 1", "\U0001F5D1 2", "\U0001F5D1 3"] == [x for x in labels(markup) if x.startswith("\U0001F5D1")]
+    assert any("Add photo" in x for x in labels(markup))
+    assert any("Rename" in x for x in labels(markup)), "renaming should be right here"
 
-    # удаление по номеру убирает именно это фото
+    # deleting by number removes exactly that photo
     photos = db.service_photos(design)
     cb = FakeCb(f"a:svcphdel:{photos[1]['id']}", uid=111111111)
     await ah.cb_service_photo_del(cb, FakeState())
     left = [p["file_id"] for p in db.service_photos(design)]
-    print("\nпосле удаления №2 осталось:", left)
-    assert left == ["PH_0", "PH_2"], "должно удалиться ровно второе фото"
+    print("\nafter deleting #2, left with:", left)
+    assert left == ["PH_0", "PH_2"], "exactly the second photo should be gone"
 
-    # удаление обложки -> обложкой становится следующее
+    # deleting the cover -> the next photo becomes the cover
     cb = FakeCb(f"a:svcphdel:{db.service_photos(design)[0]['id']}", uid=111111111)
     await ah.cb_service_photo_del(cb, FakeState())
-    assert db.service_cover(design) == "PH_2", "обложка должна перейти на следующее фото"
-    print("обложка после удаления первого:", db.service_cover(design), "✅")
+    assert db.service_cover(design) == "PH_2", "the cover should move to the next photo"
+    print("cover after deleting the first one:", db.service_cover(design), "✅")
 
-    # карточка услуги показывает счётчик
+    # the service card shows the count
     db.add_service_photo(design, "PH_NEW")
     text, markup = ah.svc_detail(design)
-    assert "🖼 Примеры: 2" in text
-    assert any("Примеры (2)" in x for x in labels(markup))
-    print("карточка вида: счётчик примеров ✅")
+    assert "Examples: 2" in text
+    assert any("Examples (2)" in x for x in labels(markup))
+    print("service card: example count ✅")
 
-    # === клиент ===
+    # === client side ===
     cb = FakeCb("bk")
     await ch.cb_book(cb, FakeState())
     text, markup = cb.message.replies[-1]
-    assert "Выберите вид маникюра" in text and "по фото" in text
-    assert all(x.startswith("🖼") for x in labels(markup) if "дизайном" in x), \
-        "оба вида с примерами должны быть помечены"
-    print("\nсписок видов: подпись и маркеры ✅")
+    assert "Choose a service" in text and "by photo" in text
+    assert all(x.startswith("\U0001F5BC") for x in labels(markup) if "дизайном" in x), \
+        "both styles with examples should be marked"
+    print("\nservice list: caption and markers ✅")
 
-    # тап по виду -> обложка + кнопка показа примеров
+    # tapping a style -> cover photo + a "show examples" button
     cb = FakeCb(f"svc:{design}")
     st = FakeState()
     await ch.cb_service(cb, st)
     photo, caption, markup = cb.message.photos_sent[0]
-    print("\nкарточка вида у клиента:")
-    print("    обложка:", photo)
-    print("  кнопки:", labels(markup))
+    print("\nclient's style card:")
+    print("    cover:", photo)
+    print("  buttons:", labels(markup))
     assert photo == "PH_2"
-    assert any("Показать примеры (2)" in x for x in labels(markup)), "нет кнопки показа примеров"
+    assert any("Show examples (2)" in x for x in labels(markup)), "missing the show-examples button"
     assert f"svcex:{design}" in cbs(markup)
 
-    # нажатие «Показать примеры» -> альбом всех примеров
+    # tapping "Show examples" -> an album of all the examples
     cb = FakeCb(f"svcex:{design}")
     st = FakeState()
     await ch.cb_service_examples(cb, st)
-    assert cb.bot.albums, "должен уйти альбом примеров"
+    assert cb.bot.albums, "the examples album should go out"
     chat_id, files = cb.bot.albums[0]
-    print("\nпоказ примеров клиенту -> альбом:", files)
-    assert files == ["PH_2", "PH_NEW"], "клиент должен увидеть все примеры вида"
+    print("\nshowing examples to the client -> album:", files)
+    assert files == ["PH_2", "PH_NEW"], "the client should see every example for this style"
     assert chat_id == 999
     text, markup = cb.message.replies[-1]
-    assert "примеров: 2" in text
-    assert f"svcgo:{design}" in cbs(markup), "из примеров можно сразу выбрать время"
-    assert st.data["service_id"] == design, "вид должен запомниться"
-    print("  из показа примеров можно сразу выбрать время ✅")
+    assert "2 example(s)" in text
+    assert f"svcgo:{design}" in cbs(markup), "picking a time should be reachable right from the examples"
+    assert st.data["service_id"] == design, "the style should be remembered"
+    print("  can jump straight to picking a time from the examples ✅")
 
-    # один пример -> кнопки показа нет (обложка и есть пример)
-    one = db.add_service("Маникюр без покрытия", 60, "30 евро", False, 1, 25)
+    # a single example -> no show button (the cover already is the example)
+    one = db.add_service("Manicure without coating", 60, "30 евро", False, 1, 25)
     db.add_service_photo(one, "SINGLE")
     cb = FakeCb(f"svc:{one}")
     await ch.cb_service(cb, FakeState())
     _, _, markup = cb.message.photos_sent[0]
-    assert not any("Показать примеры" in x for x in labels(markup)), \
-        "при одном фото кнопка показа лишняя"
-    print("один пример -> кнопки показа нет ✅")
+    assert not any("Show examples" in x for x in labels(markup)), \
+        "a single photo makes the show button redundant"
+    print("single example -> no show button ✅")
 
-    # вид без примеров -> сразу к датам
-    plain = db.add_service("Снятие", 30, "10 евро", False, 1, 0)
+    # a style with no examples -> straight to dates
+    plain = db.add_service("Removal", 30, "10 евро", False, 1, 0)
     cb = FakeCb(f"svc:{plain}")
     st = FakeState()
     await ch.cb_service(cb, st)
     assert not cb.message.photos_sent
     assert st.data.get("master_id") == mid
-    print("вид без примеров -> без лишнего шага ✅")
+    print("style without examples -> no extra step ✅")
 
-    # === миграция: старое одиночное фото переезжает в галерею ===
+    # === migration: an old single photo moves into the gallery ===
     OLD = DB + ".old"
     if os.path.exists(OLD):
         os.remove(OLD)
@@ -213,7 +216,7 @@ async def main():
         duration_min INTEGER NOT NULL, price TEXT DEFAULT '', is_group INTEGER DEFAULT 0,
         capacity INTEGER DEFAULT 1, comeback_days INTEGER DEFAULT 21,
         photo_id TEXT DEFAULT '', active INTEGER DEFAULT 1);
-    INSERT INTO services(title,duration_min,photo_id) VALUES('Маникюр',120,'OLD_PHOTO');
+    INSERT INTO services(title,duration_min,photo_id) VALUES('Manicure',120,'OLD_PHOTO');
     """)
     c.commit()
     c.close()
@@ -225,14 +228,14 @@ async def main():
     importlib.reload(config)
     db._conn = None
     db.init_db()
-    assert db.service_cover(1) == "OLD_PHOTO", "старое фото должно стать обложкой"
-    assert db.get_service(1)["photo_id"] == "", "колонка должна погаснуть после переноса"
-    db.init_db()  # повторный запуск не должен задваивать
-    assert db.service_photos_count(1) == 1, "повторная миграция не должна дублировать фото"
-    print("\nмиграция старого фото в галерею ✅ (повторный запуск не дублирует)")
+    assert db.service_cover(1) == "OLD_PHOTO", "the old photo should become the cover"
+    assert db.get_service(1)["photo_id"] == "", "the column should clear after migrating"
+    db.init_db()  # running it again shouldn't duplicate
+    assert db.service_photos_count(1) == 1, "a repeat migration shouldn't duplicate the photo"
+    print("\nold photo migrated into the gallery ✅ (repeat run doesn't duplicate)")
 
     print()
-    print("ВСЕ ПРОВЕРКИ ГАЛЕРЕИ ПРОШЛИ ✅")
+    print("ALL GALLERY CHECKS PASSED ✅")
 
 
 asyncio.run(main())

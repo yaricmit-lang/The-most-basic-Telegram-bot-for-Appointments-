@@ -1,8 +1,8 @@
-"""Фоновый цикл: завершение визитов и отправка отложенных уведомлений.
+"""Background loop: completing finished visits and sending due notifications.
 
-Все уведомления лежат в таблице notifications и переживают перезапуск бота.
-Типы: confirm24 (за 24 ч, требует ответа), remind2 (за 2 ч),
-feedback (после визита), comeback (приглашение вернуться через N дней).
+All notifications live in the `notifications` table and survive a bot
+restart. Types: confirm24 (24h before, needs a reply), remind2 (2h before),
+feedback (after the visit), comeback (invite to return after N days).
 """
 import asyncio
 import logging
@@ -12,11 +12,12 @@ import db
 import notify
 import refs
 import slots
+from i18n import t
 from ui import btn, esc, fmt_dt, kb
 
 log = logging.getLogger(__name__)
 
-# Если сегодня выходной, «конца рабочего дня» в расписании нет — проверяем вечером.
+# If today is a day off, there's no "end of day" in the schedule -- check in the evening.
 EOD_FALLBACK = "20:00"
 
 
@@ -27,7 +28,7 @@ def schedule_for_appointment(appt_id, starts_at):
         due = st - timedelta(hours=hours)
         if due > now:
             db.add_notification(appt_id, typ, due.strftime("%Y-%m-%d %H:%M"))
-    # напоминание прислать референс — накануне вечером, до дедлайна
+    # reference reminder -- the evening before, ahead of the deadline
     ref_due = (st - timedelta(days=1)).replace(
         hour=db.get_int("ref_remind_hour", 20), minute=0
     )
@@ -46,53 +47,41 @@ def _complete_finished():
 
 
 def _build_message(typ, appt):
-    """(text, markup) или None, если уведомление уже неактуально."""
+    """(text, markup) or None if the notification is no longer relevant."""
     now = db.now_str()
     if typ == "confirm24":
         if appt["status"] != "created" or appt["starts_at"] <= now:
             return None
-        text = (
-            f"⏰ Напоминаем: <b>{fmt_dt(appt['starts_at'])}</b> — "
-            f"{esc(appt['service_title'])} у мастера {esc(appt['master_name'])}.\n\n"
-            f"Пожалуйста, подтвердите запись:"
-        )
+        text = t("reminder_confirm24", when=fmt_dt(appt["starts_at"]),
+                  service=esc(appt["service_title"]), master=esc(appt["master_name"]))
         markup = kb([
-            [btn("✅ Подтверждаю", f"cfm:{appt['id']}")],
-            [btn("❌ Не смогу прийти", f"ccl:{appt['id']}")],
+            [btn(t("btn_confirm_yes"), f"cfm:{appt['id']}")],
+            [btn(t("btn_confirm_no"), f"ccl:{appt['id']}")],
         ])
         return text, markup
     if typ == "remind2":
         if appt["status"] not in ("created", "confirmed") or appt["starts_at"] <= now:
             return None
-        text = (
-            f"🔔 Через 2 часа ждём вас: {esc(appt['service_title'])}, "
-            f"{appt['starts_at'][11:16]}. До встречи!"
-        )
+        text = t("reminder_remind2", service=esc(appt["service_title"]),
+                  time=appt["starts_at"][11:16])
         return text, None
     if typ == "feedback":
         if appt["status"] != "completed":
             return None
-        text = (
-            f"💬 Как всё прошло? Оцените визит\n"
-            f"«{esc(appt['service_title'])}» от {fmt_dt(appt['starts_at'])}:"
-        )
+        text = t("reminder_feedback", service=esc(appt["service_title"]), when=fmt_dt(appt["starts_at"]))
         markup = kb([[btn(str(n), f"fb:{appt['id']}:{n}") for n in range(1, 6)]])
         return text, markup
     if typ == "refremind":
         if appt["status"] not in ("created", "confirmed") or appt["starts_at"] <= now:
             return None
         if refs.has_ref(appt) or not refs.is_open(appt):
-            return None  # уже прислал или окно закрылось
+            return None  # already sent, or the window has closed
         deadline, _ = refs.window(appt)
-        text = (
-            f"💅 Завтра ваш визит: {esc(appt['service_title'])}, "
-            f"{fmt_dt(appt['starts_at'])}.\n\n"
-            f"Хотите прислать пример дизайна? Мастер успеет подготовить материалы.\n"
-            f"Принимаю до {fmt_dt(deadline)}."
-        )
+        text = t("reminder_refremind", service=esc(appt["service_title"]),
+                  when=fmt_dt(appt["starts_at"]), deadline=fmt_dt(deadline))
         markup = kb([
-            [btn("📎 Прислать референс", f"ref:{appt['id']}")],
-            [btn("Не нужно", "refskip")],
+            [btn(t("btn_send_ref_remind"), f"ref:{appt['id']}")],
+            [btn(t("btn_no_thanks"), "refskip")],
         ])
         return text, markup
     if typ == "comeback":
@@ -100,14 +89,12 @@ def _build_message(typ, appt):
             return None
         svc = db.get_service(appt["service_id"])
         days = svc["comeback_days"] if svc else 21
-        period = f"{days // 7} недели" if days % 7 == 0 else f"{days} дней"
-        text = (
-            f"✨ Прошло уже {period} после «{esc(appt['service_title'])}» — "
-            f"пора освежить!\n\nЗаписаться снова?"
-        )
+        period = (t("period_weeks", n=days // 7) if days % 7 == 0
+                  else t("period_days", n=days))
+        text = t("reminder_comeback", period=period, service=esc(appt["service_title"]))
         markup = kb([
-            [btn("🔁 Записаться снова", f"rpt:{appt['service_id']}:{appt['master_id']}")],
-            [btn("🗂 Другая услуга", "bk")],
+            [btn(t("btn_repeat_visit"), f"rpt:{appt['service_id']}:{appt['master_id']}")],
+            [btn(t("btn_other_service"), "bk")],
         ])
         return text, markup
     return None
@@ -116,11 +103,11 @@ def _build_message(typ, appt):
 async def _send_due(bot):
     for n in db.due_notifications():
         if not db.claim_notification(n["id"]):
-            continue  # уведомление уже забрал другой процесс
+            continue  # another process already claimed this notification
         appt = db.get_appointment(n["appointment_id"])
         if not appt:
             continue
-        # референс уходит мастеру, а не клиенту: пауза в минуту склеивает альбом
+        # reference notifications go to the master, not the client; the 60s delay batches the album
         if n["type"] == "refnew":
             if appt["status"] in ("created", "confirmed") and refs.has_ref(appt):
                 await notify.master_reference(bot, appt)
@@ -133,16 +120,16 @@ async def _send_due(bot):
         text, markup = built
         try:
             await bot.send_message(appt["client_tg"], text, reply_markup=markup)
-            log.info("Отправлено уведомление id=%s тип=%s запись=%s клиенту=%s",
+            log.info("Sent notification id=%s type=%s appointment=%s client=%s",
                      n["id"], n["type"], appt["id"], appt["client_tg"])
         except Exception as e:
-            log.warning("Уведомление %s клиенту %s не доставлено: %s",
+            log.warning("Notification %s to client %s not delivered: %s",
                         n["type"], appt["client_tg"], e)
 
 
 async def _maybe_digest(bot):
-    """Сводка мастеру раз в день. Окно в 3 часа — чтобы после долгого простоя
-    бота не прилетела «утренняя» сводка вечером."""
+    """The master's daily digest. A 3-hour window prevents a "morning" digest
+    from arriving in the evening after a long bot outage."""
     hour = db.get_int("digest_hour", 8)
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
@@ -155,8 +142,8 @@ async def _maybe_digest(bot):
 
 
 async def _maybe_eod_check(bot):
-    """В конце рабочего дня (по расписанию) напомнить проверить материалы на завтра —
-    если по завтрашним записям остались референсы без ответа."""
+    """At the end of the working day (per the schedule), remind the master to
+    check materials -- if tomorrow's bookings still have unanswered references."""
     now = datetime.now()
     today = now.strftime("%Y-%m-%d")
     if db.get_setting("last_eod_date") == today:
@@ -166,7 +153,7 @@ async def _maybe_eod_check(bot):
         return
     win = slots.get_work_window(owner["id"], today)
     end_dt = datetime.strptime(f"{today} {win[1] if win else EOD_FALLBACK}", "%Y-%m-%d %H:%M")
-    # окно в 3 часа: после долгого простоя бота напоминание не прилетит среди ночи
+    # 3-hour window: after a long bot outage, this won't fire in the middle of the night
     if not (end_dt <= now < end_dt + timedelta(hours=3)):
         return
     db.set_setting("last_eod_date", today)
@@ -183,5 +170,5 @@ async def worker(bot):
             await _maybe_digest(bot)
             await _maybe_eod_check(bot)
         except Exception:
-            log.exception("Ошибка фонового цикла уведомлений")
+            log.exception("Notification loop error")
         await asyncio.sleep(60)

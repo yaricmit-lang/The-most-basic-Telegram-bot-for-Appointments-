@@ -1,15 +1,16 @@
-"""Защита от повторной отправки уведомлений на всех уровнях."""
+"""Duplicate-notification guards at every layer."""
 import asyncio
 import os
+import tempfile
 import sqlite3
 import sys
 from datetime import datetime, timedelta
 
-DB = "/private/tmp/claude-501/-Users-admin-Claude/f8db589b-7a41-413d-a71d-7e652b630980/scratchpad/nodup.db"
+DB = os.path.join(tempfile.gettempdir(), "nodup.db")
 os.environ["DB_PATH"] = DB
 if os.path.exists(DB):
     os.remove(DB)
-sys.path.insert(0, "/Users/admin/Claude/appointment-bot")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
 import config
@@ -18,7 +19,7 @@ import scheduler
 
 db.init_db()
 mid = db.add_master("Test Master", 111111111)
-sid = db.add_service("Маникюр", 120, "40€", False, 1, 25)
+sid = db.add_service("Manicure", 120, "40€", False, 1, 25)
 cid = db.create_client("Test Client", "+79995550001", tg_id=999)
 
 from handlers import admin as ah
@@ -82,33 +83,33 @@ async def main():
     far = (datetime.now() + timedelta(hours=30)).strftime("%Y-%m-%d %H:%M")
     aid = db.create_appointment(cid, sid, mid, far, far)
 
-    # === 1. Повторный schedule_for_appointment не задваивает строки ===
+    # === 1. Calling schedule_for_appointment again doesn't duplicate rows ===
     scheduler.schedule_for_appointment(aid, far)
-    scheduler.schedule_for_appointment(aid, far)   # двойной вызов (двойной тап/переотправка)
+    scheduler.schedule_for_appointment(aid, far)   # double call (double tap/resent update)
     scheduler.schedule_for_appointment(aid, far)
     for typ in ("confirm24", "remind2", "refremind"):
         n = count_notif(aid, typ)
-        print(f"  {typ}: строк={n}")
-        assert n == 1, f"{typ} задвоился: {n} строк"
-    print("1. schedule_for_appointment идемпотентен ✅")
+        print(f"  {typ}: rows={n}")
+        assert n == 1, f"{typ} was duplicated: {n} rows"
+    print("1. schedule_for_appointment is idempotent ✅")
 
-    # === 2. Прямой add_notification-дубль игнорируется ===
+    # === 2. A direct add_notification duplicate is ignored ===
     db.add_notification(aid, "feedback", db.now_str())
     db.add_notification(aid, "feedback", db.now_str())
     assert count_notif(aid, "feedback") == 1
     print("2. add_notification OR IGNORE ✅")
 
-    # === 3. refnew МОЖЕТ повторяться (клиент дослал референс) ===
+    # === 3. refnew CAN repeat (the client sent another reference) ===
     db.add_ref(aid, "f1", "photo", 5)
     db.schedule_ref_notify(aid)
-    # первый refnew отправим, затем клиент дослал -> второй refnew допустим
+    # send the first refnew, then the client sends more -> a second refnew is legitimate
     db.mark_ref_notified(aid)
     db.add_ref(aid, "f2", "photo", 5)
     db.schedule_ref_notify(aid)
-    assert count_notif(aid, "refnew") == 2, "refnew должен уметь повторяться"
-    print("3. refnew повторяется легитимно (2 строки) ✅")
+    assert count_notif(aid, "refnew") == 2, "refnew must be allowed to repeat"
+    print("3. refnew legitimately repeats (2 rows) ✅")
 
-    # === 4. Одна строка уведомления не отправляется дважды (2 тика воркера) ===
+    # === 4. A single notification row isn't sent twice (2 worker ticks) ===
     due = (datetime.now() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M")
     a2 = db.create_appointment(cid, sid, mid,
                                (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M"),
@@ -116,47 +117,47 @@ async def main():
     db.add_notification(a2, "remind2", due)
     bot = FakeBot()
     await scheduler._send_due(bot)
-    await scheduler._send_due(bot)   # второй тик
-    remind_sends = [s for s in bot.sent if "Через 2 часа" in s[1]]
-    print(f"  отправок remind2 за 2 тика: {len(remind_sends)}")
-    assert len(remind_sends) == 1, "одно уведомление отправлено дважды!"
-    print("4. одна строка = одна отправка ✅")
+    await scheduler._send_due(bot)   # second tick
+    remind_sends = [s for s in bot.sent if "2 hours" in s[1]]
+    print(f"  remind2 sends over 2 ticks: {len(remind_sends)}")
+    assert len(remind_sends) == 1, "one notification was sent twice!"
+    print("4. one row = one send ✅")
 
-    # === 5. Завершение визита дважды не задваивает feedback/comeback ===
+    # === 5. Completing a visit twice doesn't duplicate feedback/comeback ===
     past_s = (datetime.now() - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M")
     past_e = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
     a3 = db.create_appointment(cid, sid, mid, past_s, past_e)
     scheduler._complete_finished()
-    scheduler._complete_finished()   # повторный проход
+    scheduler._complete_finished()   # second pass
     assert count_notif(a3, "feedback") == 1 and count_notif(a3, "comeback") == 1
-    print("5. _complete_finished идемпотентен ✅")
+    print("5. _complete_finished is idempotent ✅")
 
-    # === 6. Двойной тап «Отменить» -> мастеру одно уведомление, лист ожидания один раз ===
+    # === 6. Double-tapping "Cancel" -> one notification to the master, waitlist runs once ===
     a4 = db.create_appointment(cid, sid, mid,
                                (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d %H:%M"),
                                (datetime.now() + timedelta(days=2, hours=2)).strftime("%Y-%m-%d %H:%M"))
     cb1 = FakeCb(f"doccl:{a4}")
     cb2 = FakeCb(f"doccl:{a4}")
-    # имитируем гонку: оба прочитали статус до записи
+    # simulate a race: both read the status before either writes it
     await asyncio.gather(ch.cb_cancel_do(cb1), ch.cb_cancel_do(cb2))
-    master_msgs = [s for s in cb1.bot.sent + cb2.bot.sent if "Отмена записи" in s[1]]
-    print(f"  уведомлений мастеру об отмене: {len(master_msgs)}")
-    assert len(master_msgs) == 1, "мастер получил отмену дважды!"
+    master_msgs = [s for s in cb1.bot.sent + cb2.bot.sent if "Booking cancelled" in s[1]]
+    print(f"  cancellation notifications to the master: {len(master_msgs)}")
+    assert len(master_msgs) == 1, "the master got the cancellation twice!"
     assert db.get_appointment(a4)["status"] == "cancelled"
-    print("6. двойная отмена -> одно уведомление мастеру ✅")
+    print("6. double cancel -> one notification to the master ✅")
 
-    # === 7. Двойная оценка -> мастеру одна ===
+    # === 7. A double rating -> the master gets one ===
     db.set_appointment_status(a3, "completed")
     cbf1 = FakeCb(f"fb:{a3}:5")
     cbf2 = FakeCb(f"fb:{a3}:4")
     await ch.cb_feedback(cbf1, FakeState())
     await ch.cb_feedback(cbf2, FakeState())
-    rating_msgs = [s for s in cbf1.bot.sent + cbf2.bot.sent if "Оценка" in s[1]]
-    print(f"  уведомлений мастеру об оценке: {len(rating_msgs)}")
-    assert len(rating_msgs) == 1, "мастер получил оценку дважды!"
-    print("7. двойная оценка -> одно уведомление мастеру ✅")
+    rating_msgs = [s for s in cbf1.bot.sent + cbf2.bot.sent if "Rating" in s[1]]
+    print(f"  rating notifications to the master: {len(rating_msgs)}")
+    assert len(rating_msgs) == 1, "the master got the rating twice!"
+    print("7. double rating -> one notification to the master ✅")
 
-    # === 8. Двойное подтверждение «Всё есть» -> клиенту одно ===
+    # === 8. Double-confirming "All set" -> the client gets one ===
     a5 = db.create_appointment(cid, sid, mid,
                                (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d %H:%M"),
                                (datetime.now() + timedelta(days=3, hours=2)).strftime("%Y-%m-%d %H:%M"))
@@ -165,12 +166,12 @@ async def main():
     cbo2 = FakeCb(f"a:refok:{a5}", uid=111111111)
     await ah.cb_ref_ok(cbo1)
     await ah.cb_ref_ok(cbo2)
-    ok_msgs = [s for s in cbo1.bot.sent + cbo2.bot.sent if "всё есть" in s[1].lower()]
-    print(f"  подтверждений клиенту «материалы есть»: {len(ok_msgs)}")
-    assert len(ok_msgs) == 1, "клиент получил подтверждение дважды!"
-    print("8. двойное «Всё есть» -> одно клиенту ✅")
+    ok_msgs = [s for s in cbo1.bot.sent + cbo2.bot.sent if "all set" in s[1].lower()]
+    print(f'  "materials are ready" confirmations to the client: {len(ok_msgs)}')
+    assert len(ok_msgs) == 1, "the client got the confirmation twice!"
+    print('8. double "All set" -> one to the client ✅')
 
-    # === 9. Двойное подтверждение визита -> статус один раз ===
+    # === 9. Double-confirming the visit -> the status changes only once ===
     a6 = db.create_appointment(cid, sid, mid,
                                (datetime.now() + timedelta(days=4)).strftime("%Y-%m-%d %H:%M"),
                                (datetime.now() + timedelta(days=4, hours=2)).strftime("%Y-%m-%d %H:%M"))
@@ -179,9 +180,9 @@ async def main():
     await ch.cb_confirm_visit(cbc1)
     await ch.cb_confirm_visit(cbc2)
     assert db.get_appointment(a6)["status"] == "confirmed"
-    print("9. двойное подтверждение визита -> ок ✅")
+    print("9. double visit confirmation -> ok ✅")
 
-    # === 10. Миграция: существующие дубли строк схлопываются, индекс не даёт вставить ===
+    # === 10. Migration: existing duplicate rows collapse, the index blocks new ones ===
     OLD = DB + ".old"
     if os.path.exists(OLD):
         os.remove(OLD)
@@ -210,22 +211,22 @@ async def main():
     r2 = db.conn().execute("SELECT COUNT(*) n FROM notifications WHERE appointment_id=1 AND type='remind2'").fetchone()["n"]
     fb = db.conn().execute("SELECT COUNT(*) n FROM notifications WHERE appointment_id=1 AND type='feedback'").fetchone()["n"]
     rn = db.conn().execute("SELECT COUNT(*) n FROM notifications WHERE appointment_id=2 AND type='refnew'").fetchone()["n"]
-    print(f"  после схлопывания: remind2={r2}, feedback={fb}, refnew={rn}")
-    assert r2 == 1 and fb == 1, "дубли не схлопнулись"
-    assert rn == 2, "refnew не должен схлопываться"
-    # индекс не даёт вставить новый дубль
+    print(f"  after collapsing: remind2={r2}, feedback={fb}, refnew={rn}")
+    assert r2 == 1 and fb == 1, "duplicates didn't collapse"
+    assert rn == 2, "refnew must not collapse"
+    # the index blocks inserting a new duplicate
     try:
         db.conn().execute("INSERT INTO notifications(appointment_id,type,due_at) VALUES(1,'remind2','x')")
         db.conn().commit()
         raised = False
     except sqlite3.IntegrityError:
         raised = True
-    assert raised, "уникальный индекс должен запрещать дубль remind2"
-    db.init_db()  # повторная миграция не падает
-    print("10. миграция схлопнула дубли + индекс защищает ✅")
+    assert raised, "the unique index must reject a remind2 duplicate"
+    db.init_db()  # migrating again doesn't fail
+    print("10. migration collapsed duplicates + the index protects ✅")
 
     print()
-    print("ВСЕ ПРОВЕРКИ АНТИ-ДУБЛЯ ПРОШЛИ ✅")
+    print("ALL ANTI-DUPLICATE CHECKS PASSED ✅")
 
 
 asyncio.run(main())

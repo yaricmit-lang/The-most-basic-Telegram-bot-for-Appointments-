@@ -1,13 +1,14 @@
-"""Экраны референса: кнопка выхода в панель + защита от повторного подтверждения."""
+"""Reference cards: the exit-to-panel button, and the no-double-confirmation guard."""
 import asyncio
 import os
+import tempfile
 import sys
 
-DB = "/private/tmp/claude-501/-Users-admin-Claude/f8db589b-7a41-413d-a71d-7e652b630980/scratchpad/card.db"
+DB = os.path.join(tempfile.gettempdir(), "card.db")
 os.environ["DB_PATH"] = DB
 if os.path.exists(DB):
     os.remove(DB)
-sys.path.insert(0, "/Users/admin/Claude/appointment-bot")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
 import config
@@ -15,10 +16,11 @@ config.ADMIN_IDS = frozenset()  # isolate tests from the developer's real .env
 
 db.init_db()
 mid = db.add_master("Test Master", 111111111)
-sid = db.add_service("Маникюр", 120, "40 евро", False, 1, 25)
+sid = db.add_service("Manicure", 120, "€40", False, 1, 25)
 cid = db.create_client("Test Client", "+79995550001", tg_id=999)
 
 from handlers import admin as ah
+from i18n import t
 
 
 class FakeBot:
@@ -68,43 +70,43 @@ async def main():
     aid = db.create_appointment(cid, sid, mid, "2026-08-20 11:00", "2026-08-20 13:00")
     db.add_ref(aid, "file_x", "photo", 5)
 
-    # --- «Ответить позже»: есть выход в панель мастера
+    # --- "Answer later": there's an exit back to the owner panel
     bot = FakeBot()
     cb = FakeCb(f"a:reflater:{aid}", bot)
     await ah.cb_ref_later(cb)
-    print("Отложено ->", buttons(cb.message.markup))
-    assert "a:menu" in targets(cb.message.markup), "нет выхода в панель мастера"
-    assert "Отложено" in cb.message.text
-    # статус не выставлен -> напоминание в конце дня подхватит
+    print("Postponed ->", buttons(cb.message.markup))
+    assert "a:menu" in targets(cb.message.markup), "no exit to the owner panel"
+    assert t("postponed_short") in cb.message.text
+    # no status was set -> the end-of-day reminder will pick it up
     assert db.get_appointment(aid)["ref_status"] == ""
-    print("  выход в панель ✅, статус не выставлен ✅")
+    print("  exit to panel ✅, no status set ✅")
 
-    # --- «Всё есть»: клиент уведомлён один раз, есть выход в панель
+    # --- "All set": the client is notified exactly once, there's an exit to the panel
     bot = FakeBot()
     cb = FakeCb(f"a:refok:{aid}", bot)
     await ah.cb_ref_ok(cb)
-    print("Всё есть ->", buttons(cb.message.markup))
-    assert "a:menu" in targets(cb.message.markup), "нет выхода в панель мастера"
+    print("All set ->", buttons(cb.message.markup))
+    assert "a:menu" in targets(cb.message.markup), "no exit to the owner panel"
     assert db.get_appointment(aid)["ref_status"] == "ok"
-    assert len(bot.sent) == 1, "клиент должен получить ровно одно подтверждение"
+    assert len(bot.sent) == 1, "the client should get exactly one confirmation"
     assert bot.sent[0][0] == 999
-    print("  выход в панель ✅, клиент уведомлён 1 раз ✅")
+    print("  exit to panel ✅, client notified once ✅")
 
-    # кнопки-статусы убраны -> повторно подтвердить с этого экрана нельзя
-    assert not any(t and t.startswith("a:refok:") for t in targets(cb.message.markup)), \
-        "кнопка подтверждения должна исчезнуть"
-    print("  кнопка «Всё есть» убрана с экрана ✅")
+    # the status buttons are gone -> this screen can't confirm a second time
+    assert not any(cb_data and cb_data.startswith("a:refok:") for cb_data in targets(cb.message.markup)), \
+        "the confirm button should be gone"
+    print('  "All set" button removed from the screen ✅')
 
-    # --- повторное нажатие (например, со старого сообщения) не шлёт второй раз
+    # --- a repeat tap (e.g. from an old message) doesn't send a second notification
     bot2 = FakeBot()
     cb2 = FakeCb(f"a:refok:{aid}", bot2)
     await ah.cb_ref_ok(cb2)
-    assert not bot2.sent, "второе подтверждение клиенту слать нельзя"
-    assert cb2.answers == ["Уже подтверждено"]
-    print("  повторное нажатие -> клиенту ничего не ушло ✅")
+    assert not bot2.sent, "a second confirmation must not be sent to the client"
+    assert cb2.answers == [t("already_confirmed_master")]
+    print("  repeat tap -> nothing sent to the client ✅")
 
     print()
-    print("ВСЕ ПРОВЕРКИ ЭКРАНОВ ПРОШЛИ ✅")
+    print("ALL CARD CHECKS PASSED ✅")
 
 
 asyncio.run(main())

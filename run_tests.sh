@@ -1,5 +1,5 @@
 #!/bin/bash
-# Прогон всех тестов: ./run_tests.sh
+# Run the full test suite: ./run_tests.sh
 cd "$(dirname "$0")"
 fail=0
 for t in tests/*.py; do

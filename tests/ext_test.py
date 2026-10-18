@@ -1,27 +1,31 @@
-"""Наращивание ногтей: тарифы, вопрос клиенту, длительность в расписании, цена."""
+"""Nail extensions: rates, the client question, duration in the schedule, pricing."""
 import asyncio
 import os
+import tempfile
 import sqlite3
 import sys
 from datetime import datetime, timedelta
 
-DB = "/private/tmp/claude-501/-Users-admin-Claude/f8db589b-7a41-413d-a71d-7e652b630980/scratchpad/ext.db"
+DB = os.path.join(tempfile.gettempdir(), "ext.db")
 os.environ["DB_PATH"] = DB
 if os.path.exists(DB):
     os.remove(DB)
-sys.path.insert(0, "/Users/admin/Claude/appointment-bot")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
 import config
 config.ADMIN_IDS = frozenset()  # isolate tests from the developer's real .env
 import slots as sl
 import ui
+from i18n import t
 
 db.init_db()
 mid = db.add_master("Test Master", 111111111)
 for wd in range(7):
     db.set_template(mid, wd, "10:00", "19:00", None, None)
 
+# Titles stay in Russian on purpose: they exercise db._migrate's Cyrillic-aware
+# keyword matching ("средн"/"длинн"), tested below.
 med = db.add_service("Средний с простым дизайном", 120, "40€", False, 1, 25)
 lng = db.add_service("Длинный с простым дизайном", 150, "60 евро", False, 1, 25)
 shrt = db.add_service("Короткий с простым дизайном", 90, "30€", False, 1, 25)
@@ -98,89 +102,90 @@ def cbs(markup):
 
 
 async def main():
-    # === хелперы длительности и цены ===
+    # === duration/price helpers ===
     m = db.get_service(med)
     assert db.effective_duration(m, 0) == 120
-    assert db.effective_duration(m, 3) == 165, "средний: 3 ногтя = +45 мин"
-    assert db.ext_extra_price(m, 3) == 15, "средний: 3 ногтя = +15 €"
+    assert db.effective_duration(m, 3) == 165, "medium: 3 nails = +45 min"
+    assert db.ext_extra_price(m, 3) == 15, "medium: 3 nails = +€15"
     l = db.get_service(lng)
-    assert db.effective_duration(l, 2) == 190, "длинный: 2 ногтя = +40 мин"
+    assert db.effective_duration(l, 2) == 190, "long: 2 nails = +40 min"
     assert db.ext_extra_price(l, 2) == 20
     assert ui.price_with_ext("40€", 15) == "55€"
     assert ui.price_with_ext("60 евро", 40) == "100 евро"
-    assert ui.price_with_ext("", 15) == "+15 € (наращивание)"
-    assert ui.price_with_ext("договорная", 15) == "договорная +15 € (наращивание)"
+    assert ui.price_with_ext("", 15) == f"+15 € ({t('ext_surcharge_note')})"
+    assert ui.price_with_ext("negotiable", 15) == f"negotiable +15 € ({t('ext_surcharge_note')})"
     assert ui.price_with_ext("40€", 0) == "40€"
-    print("хелперы длительности и цены ✅")
+    print("duration/price helpers ✅")
 
-    # === клиент: вопрос о наращивании для среднего/длинного, но не для короткого ===
+    # === client: the extension question appears for medium/long, not for short ===
     cb = FakeCb(f"svcgo:{med}")
     st = FakeState()
     await ch.cb_service_go(cb, st)
     text, markup = cb.message.replies[-1]
-    print("\nвопрос клиенту:")
+    print("\nquestion to the client:")
     for line in text.splitlines():
         if line.strip():
             print("   ", line)
-    assert "наращивание" in text.lower() and "+5 €" in text and "+15 мин" in text
+    assert "extension" in text.lower() and "+5 €" in text and "+15 min" in text
     assert "ext:0" in cbs(markup) and "ext:10" in cbs(markup)
 
     cb = FakeCb(f"svcgo:{shrt}")
     st = FakeState()
     await ch.cb_service_go(cb, st)
     text, _ = cb.message.replies[-1]
-    assert "наращивание" not in text.lower(), "для короткого вопрос не нужен"
-    assert st.data.get("master_id") == mid, "короткий: сразу к датам"
-    print("короткий -> без вопроса, сразу к датам ✅")
+    assert "extension" not in text.lower(), "the short style doesn't need the question"
+    assert st.data.get("master_id") == mid, "short: goes straight to dates"
+    print("short -> no question, straight to dates ✅")
 
-    # === выбор количества ногтей ведёт к датам и запоминается ===
+    # === choosing a nail count leads to dates and is remembered ===
     cb = FakeCb("ext:3")
     st = FakeState(service_id=med)
     await ch.cb_extension(cb, st)
     assert st.data["ext_nails"] == 3
     assert st.data.get("master_id") == mid
-    print("выбрано 3 ногтя -> к датам ✅")
+    print("picked 3 nails -> to dates ✅")
 
-    # === бронирование: время сеанса растянуто наращиванием ===
+    # === booking: the session time is stretched by the extension ===
     cb = FakeCb("mkap")
     st = FakeState(service_id=med, master_id=mid, date=tomorrow, time="10:00",
                    ext_nails=3, gs_id=None)
     await ch.cb_make_appointment(cb, st)
     a = db.upcoming_for_client(client["id"])[0]
-    print("\nзапись:", a["starts_at"], "->", a["ends_at"],
-          f"| ногтей: {a['ext_nails']}, доплата: {a['ext_price']} €")
-    assert a["ends_at"] == f"{tomorrow} 12:45", "120 + 3*15 = 165 мин -> конец 12:45"
+    print("\nbooking:", a["starts_at"], "->", a["ends_at"],
+          f"| nails: {a['ext_nails']}, surcharge: {a['ext_price']} €")
+    assert a["ends_at"] == f"{tomorrow} 12:45", "120 + 3*15 = 165 min -> ends at 12:45"
     assert a["ext_nails"] == 3 and a["ext_price"] == 15
     conf_text, _ = cb.message.replies[-1]
-    assert "Наращивание: 3 ног." in conf_text and "2 ч 45 мин" in conf_text
+    assert "Extensions: 3 nail" in conf_text and "2 h 45 min" in conf_text
     master_msg = cb.bot.msgs[0][1]
-    assert "Наращивание: 3 ног." in master_msg and "+15 €" in master_msg, \
-        "мастер должен видеть наращивание"
-    print("мастер уведомлён с наращиванием ✅")
+    assert "Extensions: 3 nail" in master_msg and "+15 €" in master_msg, \
+        "the master should see the extension"
+    print("master notified with the extension ✅")
 
-    # === расписание: буфер идёт после РАСТЯНУТОГО конца (12:45+15), а не после 12:00 ===
+    # === schedule: the buffer follows the STRETCHED end (12:45+15), not 12:00 ===
     free = sl.free_slots(mid, tomorrow, 120)
-    print("\nслоты после записи 10:00–12:45:", free[:6], "...")
+    print("\nslots after the 10:00-12:45 booking:", free[:6], "...")
     assert "12:00" not in free and "12:30" not in free, \
-        "время внутри наращивания должно быть занято"
-    assert "13:00" in free, "12:45 + буфер 15 мин -> свободно с 13:00"
+        "time inside the extension should be busy"
+    assert "13:00" in free, "12:45 + 15 min buffer -> free from 13:00"
 
-    # и наоборот: клиент с наращиванием не влезет в дыру, куда влез бы без него
+    # and conversely: a client with extensions won't fit into a gap that would
+    # fit them without the extension
     free_ext = sl.free_slots(mid, tomorrow, db.effective_duration(m, 3))
-    assert len(free_ext) < len(free), "с наращиванием свободных стартов меньше"
-    print("расписание учитывает наращивание ✅")
+    assert len(free_ext) < len(free), "fewer free starts once extensions are factored in"
+    print("the schedule accounts for extensions ✅")
 
-    # === карточка клиента показывает реальную длительность и доплату ===
+    # === the client card shows the real duration and surcharge ===
     text, _ = ch.client_card(a)
-    assert "2 ч 45 мин" in text and "Наращивание: 3 ног." in text and "55€" in text
-    print("карточка клиента: 2 ч 45 мин, +15 €, итог 55€ ✅")
+    assert "2 h 45 min" in text and "Extensions: 3 nail" in text and "55€" in text
+    print("client card: 2 h 45 min, +€15, total 55€ ✅")
 
-    # === админ: ручная запись с наращиванием ===
+    # === admin: manual booking with an extension ===
     cb = FakeCb(f"a:nbsvc:{lng}", uid=111111111)
     st = FakeState()
     await ah.cb_nb_service(cb, st)
     text, markup = cb.message.replies[-1]
-    assert "+10 €" in text and "a:nbext:4" in cbs(markup), "админа тоже спрашиваем"
+    assert "+10 €" in text and "a:nbext:4" in cbs(markup), "the admin gets asked too"
 
     cb = FakeCb("a:nbext:4", uid=111111111)
     await ah.cb_nb_ext(cb, st)
@@ -190,35 +195,35 @@ async def main():
     msg = FakeMsg()
     await ah.show_nb_confirm(msg, st)
     text, _ = msg.replies[-1]
-    print("\nподтверждение админа:")
+    print("\nadmin confirmation:")
     for line in text.splitlines():
         if line.strip():
             print("   ", line)
-    assert "Наращивание: 4 ног. (+40 €)" in text
+    assert "Extensions: 4 nail" in text and "+40 €" in text
     assert "100 евро" in text
-    assert "3 ч 50 мин" in text
+    assert "3 h 50 min" in text
 
     cb = FakeCb("a:nbok", uid=111111111)
     await ah.cb_nb_create(cb, st)
     a2 = [x for x in db.upcoming_for_client(client["id"])
           if x["starts_at"] == f"{tomorrow} 14:00"][0]
-    assert a2["ends_at"] == f"{tomorrow} 17:50", "230 мин от 14:00 -> 17:50"
+    assert a2["ends_at"] == f"{tomorrow} 17:50", "230 min from 14:00 -> 17:50"
     assert a2["ext_nails"] == 4 and a2["ext_price"] == 40
-    client_note = [t for cid, t in cb.bot.msgs if cid == 999]
-    assert client_note and "Наращивание: 4 ног." in client_note[0], \
-        "клиент видит наращивание в «Вас записали»"
-    print("ручная запись: конец 17:50, клиент уведомлён ✅")
+    client_note = [txt for chat_id, txt in cb.bot.msgs if chat_id == 999]
+    assert client_note and "Extensions: 4 nail" in client_note[0], \
+        "the client sees the extension in \"You've been booked\""
+    print("manual booking: ends 17:50, client notified ✅")
 
-    # === границы дня: запись в 23:59 не выпадает из сводок ===
+    # === day boundaries: a 23:59 booking isn't dropped from digests ===
     import notify
     db.create_appointment(client["id"], shrt, mid, f"{tomorrow} 23:59", f"{tomorrow} 23:59")
     b1, b2 = notify._day_bounds(tomorrow)
     late_ones = [x for x in db.appointments_between(b1, b2)
                  if x["starts_at"] == f"{tomorrow} 23:59"]
-    assert late_ones, "запись в 23:59 должна попадать в дневные списки"
-    print("границы дня исправлены (23:59 не теряется) ✅")
+    assert late_ones, "a 23:59 booking should show up in the day's lists"
+    print("day boundaries fixed (23:59 isn't lost) ✅")
 
-    # === миграция: тарифы подставляются по названиям существующих услуг ===
+    # === migration: rates are backfilled from the titles of existing services ===
     OLD = DB + ".old"
     if os.path.exists(OLD):
         os.remove(OLD)
@@ -244,18 +249,18 @@ async def main():
     db.init_db()
     rates = {r["title"]: (r["ext_price_per_nail"], r["ext_min_per_nail"])
              for r in db.list_services()}
-    print("\nтарифы после миграции:")
-    for t, v in rates.items():
-        print(f"    {t}: {v[0]} €/ноготь, {v[1]} мин")
+    print("\nrates after migration:")
+    for title, v in rates.items():
+        print(f"    {title}: {v[0]} €/nail, {v[1]} min")
     assert rates["Маникюр"] == (0, 0)
     assert rates["Короткий с простым дизайном"] == (0, 0)
     assert rates["Средний со сложным дизайном"] == (5, 15)
     assert rates["Длинный с простым дизайном"] == (10, 20)
-    db.init_db()  # повторный запуск не перетирает
-    print("миграция тарифов по названиям ✅")
+    db.init_db()  # running it again doesn't wipe the rates
+    print("rate migration by title ✅")
 
     print()
-    print("ВСЕ ПРОВЕРКИ НАРАЩИВАНИЯ ПРОШЛИ ✅")
+    print("ALL EXTENSION CHECKS PASSED ✅")
 
 
 asyncio.run(main())

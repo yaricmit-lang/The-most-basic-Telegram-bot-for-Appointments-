@@ -11,6 +11,7 @@ ADMIN_IDS = frozenset(
     if x.lstrip("-").isdigit()
 )
 DB_PATH = os.getenv("DB_PATH", "booking.db")
+BOT_LANG = os.getenv("BOT_LANG", "en").strip().lower()
 
 
 def is_admin(tg_id):

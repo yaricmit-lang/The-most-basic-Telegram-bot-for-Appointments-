@@ -1,4 +1,4 @@
-"""Точка входа: запуск бота и фонового цикла уведомлений."""
+"""Entry point: starts the bot and the background notification loop."""
 import asyncio
 import fcntl
 import logging
@@ -12,6 +12,7 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 import config
 import db
 import scheduler
+from i18n import t
 from handlers import admin as admin_handlers
 from handlers import client as client_handlers
 
@@ -21,13 +22,14 @@ _lock_handle = None
 
 
 def acquire_single_instance():
-    """Второй экземпляр бота = второй планировщик = дубли уведомлений. Не пускаем.
+    """A second bot instance means a second scheduler, which means duplicate
+    notifications. Refuse to start one.
 
-    Блокировка снимается сама, когда процесс завершается (даже при kill -9).
+    The lock is released automatically when the process exits (even on kill -9).
     """
     global _lock_handle
-    # "a+", а не "w": режим "w" обрезал бы файл ещё до захвата, и неудачный
-    # второй запуск стирал бы PID работающего бота.
+    # "a+", not "w": "w" would truncate the file before we even acquire the
+    # lock, so a failed second launch would wipe out the running bot's PID.
     _lock_handle = open(LOCK_PATH, "a+")
     try:
         fcntl.flock(_lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -41,18 +43,18 @@ def acquire_single_instance():
 
 
 async def setup_commands(bot: Bot):
-    await bot.set_my_commands([BotCommand(command="start", description="Меню")])
+    await bot.set_my_commands([BotCommand(command="start", description=t("cmd_menu_desc"))])
     for admin_id in config.ADMIN_IDS:
         try:
             await bot.set_my_commands(
                 [
-                    BotCommand(command="start", description="Меню"),
-                    BotCommand(command="admin", description="Панель мастера"),
+                    BotCommand(command="start", description=t("cmd_menu_desc")),
+                    BotCommand(command="admin", description=t("cmd_admin_desc")),
                 ],
                 scope=BotCommandScopeChat(chat_id=admin_id),
             )
         except Exception:
-            pass  # админ ещё не открывал чат с ботом
+            pass  # the admin hasn't opened a chat with the bot yet
 
 
 async def main():
@@ -62,16 +64,16 @@ async def main():
     )
     if not config.BOT_TOKEN:
         raise SystemExit(
-            "Не задан BOT_TOKEN. Скопируйте .env.example в .env и вставьте токен из @BotFather."
+            "BOT_TOKEN is not set. Copy .env.example to .env and paste in the token from @BotFather."
         )
     if not acquire_single_instance():
         raise SystemExit(
-            "Бот уже запущен в другом процессе — второй экземпляр слал бы дубли "
-            "уведомлений, поэтому запуск отменён.\n"
-            "Если старый бот завис, остановите его: pkill -f 'python bot.py'"
+            "The bot is already running in another process -- a second instance would "
+            "send duplicate notifications, so this launch was aborted.\n"
+            "If the old bot is stuck, stop it with: pkill -f 'python bot.py'"
         )
     if not config.ADMIN_IDS:
-        logging.warning("ADMIN_IDS пуст — панель мастера будет недоступна!")
+        logging.warning("ADMIN_IDS is empty -- the owner panel will be unavailable!")
 
     db.init_db()
     db.ensure_owner_master(config.ADMIN_IDS)
@@ -83,7 +85,7 @@ async def main():
     await setup_commands(bot)
     asyncio.create_task(scheduler.worker(bot))
     await bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Бот запущен")
+    logging.info("Bot started")
     await dp.start_polling(bot)
 
 
